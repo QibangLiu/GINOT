@@ -1,0 +1,7 @@
+**/slurm_output/
+**/saved_models/
+**/__pycache__/
+**/.ipynb_checkpoints/
+**/.vscode/
+**/dataset/
+__pycache__/

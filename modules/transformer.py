@@ -1,0 +1,93 @@
+# %%
+import math
+from typing import Optional
+
+import torch
+import torch.nn as nn
+
+
+# %%
+class MLP(nn.Module):
+    def __init__(self, width: int, in_channels: Optional[int] = None, out_channels: Optional[int] = None):
+        super().__init__()
+        if in_channels is None:
+            in_channels = width
+        if out_channels is None:
+            out_channels = width
+        self.width = width
+        self.c_fc = nn.Linear(in_channels, width * 4)
+        self.c_proj = nn.Linear(width * 4, out_channels)
+        self.gelu = nn.GELU()
+
+    def forward(self, x):
+        return self.c_proj(self.gelu(self.c_fc(x)))
+
+
+class ResidualCrossAttentionBlock(nn.Module):
+    def __init__(
+        self,
+        width: int,
+        heads: int
+    ):
+        super().__init__()
+        self.attn = nn.MultiheadAttention(
+            embed_dim=width, num_heads=heads, batch_first=True)
+        self.ln_1 = nn.LayerNorm(width)
+        self.ln_2 = nn.LayerNorm(width)
+        self.mlp = MLP(width=width)
+        self.ln_3 = nn.LayerNorm(width)
+
+    def forward(self, x: torch.Tensor, data: torch.Tensor):
+        q = self.ln_1(x)
+        kv = self.ln_2(data)
+        x = x + self.attn(q, kv, kv)[0]
+        x = x + self.mlp(self.ln_3(x))
+        return x
+
+
+class ResidualAttentionBlock(nn.Module):
+    def __init__(
+        self,
+        *,
+        width: int,
+        heads: int,
+    ):
+        super().__init__()
+        self.attn = nn.MultiheadAttention(
+            embed_dim=width, num_heads=heads, batch_first=True)
+        self.ln_1 = nn.LayerNorm(width)
+        self.mlp = MLP(width=width)
+        self.ln_2 = nn.LayerNorm(width)
+
+    def forward(self, x: torch.Tensor):
+        qkv = self.ln_1(x)
+        x = x + self.attn(qkv, qkv, qkv)[0]
+        x = x + self.mlp(self.ln_2(x))
+        return x
+
+
+class Transformer(nn.Module):
+    def __init__(
+        self,
+        *,
+        width: int,
+        heads: int,
+        layers: int,
+    ):
+        super().__init__()
+        self.width = width
+        self.layers = layers
+        self.resblocks = nn.ModuleList(
+            [
+                ResidualAttentionBlock(
+                    width=width,
+                    heads=heads,
+                )
+                for _ in range(layers)
+            ]
+        )
+
+    def forward(self, x: torch.Tensor):
+        for block in self.resblocks:
+            x = block(x)
+        return x

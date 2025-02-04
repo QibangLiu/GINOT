@@ -80,3 +80,5 @@ class PosEmbLinear(nn.Linear):
         if self.posemb_version is not None:
             x = encode_position(self.posemb_version, position=x)
         return super().forward(x)
+
+# %%

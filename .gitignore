@@ -1,7 +1,10 @@
 **/slurm_output/
 **/saved_models/
+**/saved_weights/
 **/__pycache__/
 **/.ipynb_checkpoints/
 **/.vscode/
 **/dataset/
 __pycache__/
+*.slurm
+MyJob.*

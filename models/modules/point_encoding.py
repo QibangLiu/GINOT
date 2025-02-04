@@ -21,6 +21,7 @@ import torch.nn as nn
 
 from .transformer import ResidualCrossAttentionBlock
 from .pointnet2_utils import sample_and_group, sample_and_group_all
+import warnings
 
 # %%
 
@@ -110,7 +111,7 @@ class PointSetEmbedding(nn.Module):
         self.group_all = group_all
         self.fps_method = fps_method
 
-    def forward(self, xyz, points):
+    def forward(self, xyz, points, pc_padding_value: Optional[int] = None):
         """
         Input:
             xyz: input points position data, [B, C, N]
@@ -123,6 +124,11 @@ class PointSetEmbedding(nn.Module):
             points = points.permute(0, 2, 1)
 
         if self.group_all:
+            # QB: 2025-01-24
+            # we can not use group_all here, since some points are padding points
+            # if want group_all, padding points should be avoided
+            warnings.warn(
+                "group_all can not be used with padding points, I have not implemented it yet")
             new_xyz, new_points = sample_and_group_all(xyz, points)
         else:
             new_xyz, new_points = sample_and_group(
@@ -133,6 +139,7 @@ class PointSetEmbedding(nn.Module):
                 points,
                 deterministic=not self.training,
                 fps_method=self.fps_method,
+                pc_padding_value=pc_padding_value,
             )
         # new_xyz: sampled points position data, [B, n_point, C]
         # new_points: sampled points data, [B, n_point, n_sample, C+D]
@@ -149,6 +156,10 @@ class PointSetEmbedding(nn.Module):
         # Shuffle the representations
         if self.patch_size > 1:
             # TODO shuffle deterministically when not self.training
+            """
+            QB: 2025-01-24
+            this part seems has no effect, since a mean pooling is applied after that
+            """
             _, indices = torch.rand(
                 batch, channels, n_samples, 1, device=points.device).sort(dim=2)
             points = torch.gather(
@@ -181,7 +192,7 @@ class SimplePerceiver(nn.Module):
             ]
         )
 
-    def forward(self, x: torch.Tensor, data: torch.Tensor):
+    def forward(self, x: torch.Tensor, data: torch.Tensor, key_padding_mask: Optional[torch.Tensor] = None):
         for block in self.resblocks:
-            x = block(x, data)
+            x = block(x, data, key_padding_mask=key_padding_mask)
         return x

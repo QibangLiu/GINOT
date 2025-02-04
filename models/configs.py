@@ -1,0 +1,127 @@
+
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+import torch
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import TensorDataset, DataLoader
+import os
+import pickle
+from sklearn.model_selection import train_test_split
+
+# %%
+
+script_path = os.path.dirname(os.path.abspath(__file__))
+
+DATA_FILEBASE = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel"
+DATA_FILE = f"{DATA_FILEBASE}/node_pc_mises_disp_laststep_aug.pkl"
+
+
+PADDING_VALUE = -10
+NUM_POINT_POINTNET2 = 128
+
+
+def LoadData(data_file=DATA_FILE, test_size=0.2, seed=42):
+    with open(data_file, "rb") as f:
+        data = pickle.load(f)
+
+    SU_raw = data["mises_disp"]
+    su_shift = data['shift']  # (1,3)
+    su_scaler = data['scaler']  # (1,3)
+    coords = data['mesh_coords']  # (Nb, N, 3)
+    points_cloud = data['points_cloud']  # (Nb, N, 3)
+    x_grids = data['x_grids'].astype(np.float32)
+    y_grids = data['y_grids'].astype(np.float32)
+
+    SU = [torch.tensor((su-su_shift)/su_scaler) for su in SU_raw]  # (Nb, N, 3)
+    su_shift = torch.tensor(su_shift)[None, :]  # (1,1,3)
+    su_scaler = torch.tensor(su_scaler)[None, :]  # (1, 1, 3)
+    xyt = [torch.tensor(x[:, :2]) for x in coords]  # (Nb, N, 2)
+    points_cloud = [torch.tensor(x[:, :2])
+                    for x in points_cloud]  # (Nb,N,3)->(Nb, N, 2)
+    num_p = [x.shape[0] for x in points_cloud]
+    if min(num_p) < NUM_POINT_POINTNET2:
+        raise ValueError(
+            f"Number of sample points {NUM_POINT_POINTNET2}\
+            should be smaller than the minimum number of points in the point cloud {min(num_p)}")
+
+    SU = pad_sequence(SU, batch_first=True, padding_value=PADDING_VALUE)
+    xyt = pad_sequence(xyt, batch_first=True, padding_value=PADDING_VALUE)
+    points_cloud = pad_sequence(
+        points_cloud, batch_first=True, padding_value=PADDING_VALUE)
+    grid_coor = np.vstack([x_grids.ravel(), y_grids.ravel()]).T
+    grid_coor = torch.tensor(grid_coor)
+
+    train_pc, test_pc, train_xyt, test_xyt, train_su, test_su = train_test_split(
+        points_cloud, xyt, SU, test_size=test_size, random_state=seed)
+
+    train_dataset = TensorDataset(
+        train_pc, train_xyt, train_su)
+    test_dataset = TensorDataset(test_pc, test_xyt, test_su)
+
+    def SUInverse(x):
+        # x: (Nb, N, 3), mises stress, ux, uy
+        if isinstance(x, torch.Tensor):
+            shift = su_shift.to(x.device)
+            scaler = su_scaler.to(x.device)
+        else:
+            shift = su_shift.cpu().numpy()
+            scaler = su_scaler.cpu().numpy()
+        return x*scaler+shift
+    su_inverse = SUInverse
+    return train_dataset, test_dataset, grid_coor, su_inverse
+
+
+# %%
+
+
+def models_configs(out_c=256, latent_d=256, *args, **kwargs):
+    """************GeoEncoder arguments************"""
+
+    fps_method = "fps"
+    geo_encoder_model_args = {
+        "out_c": out_c,
+        "latent_d": latent_d,
+        "width": 128,
+        "n_point": NUM_POINT_POINTNET2,
+        "n_sample": 8,
+        "radius": 0.2,
+        "d_hidden": [128, 128],
+        "num_heads": 4,
+        "cross_attn_layers": 1,
+        "self_attn_layers": 3,
+        "pc_padding_val": PADDING_VALUE,
+        "d_hidden_sdfnn": [128, 128],
+        "fps_method": fps_method,
+    }
+    geo_encoder_file_base = f"{script_path}/saved_weights/geoencoder_outc{out_c}_latentdim{latent_d}_fps{fps_method}"
+    geo_encoder_args = {
+        "model_args": geo_encoder_model_args,
+        "filebase": geo_encoder_file_base,
+    }
+    """************NTO arguments************"""
+    embed_dim = 64
+    channel_mutipliers = [1, 2, 4]
+    has_attention = [False, False, False]
+    first_conv_channels = 16
+    num_res_blocks = 1
+    norm_groups = None
+    dropout = None
+    NTO_img_shape = (1, 120, 120)
+
+    NTO_filebase = f"{script_path}/saved_weights/NTO_outc{out_c}_latentdim{latent_d}_noatt_normgroups-{norm_groups}_dropout-{dropout}_posenc"
+
+    NTO_model_args = {"embed_dim": embed_dim,
+                      "img_shape": NTO_img_shape,
+                      "channel_mutipliers": channel_mutipliers,
+                      "has_attention": has_attention,
+                      "first_conv_channels": first_conv_channels,
+                      "num_res_blocks": num_res_blocks,
+                      "norm_groups": norm_groups,
+                      "dropout": dropout,
+                      "padding_value": PADDING_VALUE, }
+    NTO_args = {"model_args": NTO_model_args, "filebase": NTO_filebase}
+
+    args_all = {"GeoEncoder": geo_encoder_args,
+                "NTOModel": NTO_args, }
+    return args_all

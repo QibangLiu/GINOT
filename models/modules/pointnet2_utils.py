@@ -1,11 +1,16 @@
 """
-Based on https://github.com/yanx27/Pointnet_Pointnet2_pytorch/blob/master/models/pointnet2_utils.py
-Copy from https://github.com/openai/shap-e/blob/main/shap_e/models/nn/pointnet2_utils.py
+Author: Qibang Liu <qibang@illinois.edu>
+National Center for Supercomputing Applications,
+University of Illinois at Urbana-Champaign
+Created: 2025-01-15
+
+Modified base on https://github.com/openai/shap-e/blob/main/shap_e/models/nn/pointnet2_utils.py
+Originaly based on https://github.com/yanx27/Pointnet_Pointnet2_pytorch/blob/master/models/pointnet2_utils.py
 MIT License
 Copyright (c) 2019 benny
-
 """
 
+from typing import Optional
 from time import time
 
 import numpy as np
@@ -54,32 +59,32 @@ def square_distance(src, dst):
 
 def index_points(points, idx):
     """
-
     Input:
         points: input points data, [B, N, C]
-        idx: sample index data, [B, S]
+        idx: sample index data, [B, S], S is number of points to be selected out
     Return:
         new_points:, indexed points data, [B, S, C]
     """
     device = points.device
     B = points.shape[0]
-    view_shape = list(idx.shape)
-    view_shape[1:] = [1] * (len(view_shape) - 1)
+    view_shape = list(idx.shape)  # [B,S], e.g. [B,128]
+    view_shape[1:] = [1] * (len(view_shape) - 1)  # [B,1]
     repeat_shape = list(idx.shape)
-    repeat_shape[0] = 1
+    repeat_shape[0] = 1  # [1,S], e.g.[1,128]
     batch_indices = (
         torch.arange(B, dtype=torch.long).to(
             device).view(view_shape).repeat(repeat_shape)
-    )
+    )  # shape: [B,S]
     new_points = points[batch_indices, idx, :]
     return new_points
 
 
-def farthest_point_sample(xyz, npoint, deterministic=False):
+def farthest_point_sample(xyz, npoint, pc_padding_value: Optional[float] = None, deterministic=False):
     """
     Input:
         xyz: pointcloud data, [B, N, ndim], ndim=3 or 2
         npoint: number of samples
+        pc_padding_value: padding value in point cloud, if not None, the padding value will not be sampled
     Return:
         centroids: sampled pointcloud index, [B, npoint]
     """
@@ -87,28 +92,50 @@ def farthest_point_sample(xyz, npoint, deterministic=False):
     B, N, C = xyz.shape  # C is ndim
     centroids = torch.zeros(B, npoint, dtype=torch.long).to(device)
     distance = torch.ones(B, N).to(device) * 1e10
-    if deterministic:
-        farthest = torch.arange(0, B, dtype=torch.long).to(device)
+    if pc_padding_value is not None:
+        # QB if padding_value and the points is shuffled
+        pad_mask = xyz[:, :, 0] == pc_padding_value  # [B, N]
+        """
+        avoid sampling the padding points
+        for the following farthest point sampling
+        """
+        distance[pad_mask] = -1
+        non_pad_idx = torch.arange(N).repeat(B, 1).to(device)
+        non_pad_idx = torch.where(~pad_mask, non_pad_idx, float('inf'))
+        non_pad_idx, _ = torch.sort(non_pad_idx, dim=1)
+        non_pad_idx = non_pad_idx[:, :npoint].long().to(device)
+        """avoid sampling the padding points for the first point"""
+        if deterministic:
+            farthest = non_pad_idx[:, 0]
+        else:
+            ids = torch.randint(0, npoint, (B,), dtype=torch.long)
+            farthest = non_pad_idx[torch.arange(B), ids]
     else:
-        farthest = torch.randint(0, N, (B,), dtype=torch.long).to(device)
+        if deterministic:
+            farthest = torch.arange(0, B, dtype=torch.long).to(device)
+        else:
+            farthest = torch.randint(0, N, (B,), dtype=torch.long).to(device)
+
+
     batch_indices = torch.arange(B, dtype=torch.long).to(device)
     for i in range(npoint):
-        centroids[:, i] = farthest
-        centroid = xyz[batch_indices, farthest, :].view(B, 1, C)
-        dist = torch.sum((xyz - centroid) ** 2, -1)
+        centroids[:, i] = farthest  # [B, npoint]
+        centroid = xyz[batch_indices, farthest, :].view(B, 1, C)  # [B, 1, C]
+        dist = torch.sum((xyz - centroid) ** 2, -1)  # [B, N]
         mask = dist < distance
+        # the max distance, for the one have been sampled, the distance is 0
         distance[mask] = dist[mask]
         farthest = torch.max(distance, -1)[1]
     return centroids
 
 
-def query_ball_point(radius, nsample, xyz, new_xyz):
+def query_ball_point(radius, nsample, xyz, new_xyz, pc_padding_value: Optional[float] = None):
     """
     Input:
         radius: local region radius
         nsample: max sample number in local region
         xyz: all points, [B, N, ndim], ndim=3 or 2
-        new_xyz: query points, [B, S, ndim]
+        new_xyz: query points, [B, S, ndim], S is npoints
     Return:
         group_idx: grouped points index, [B, S, nsample]
     """
@@ -116,12 +143,20 @@ def query_ball_point(radius, nsample, xyz, new_xyz):
     B, N, C = xyz.shape
     _, S, _ = new_xyz.shape
     group_idx = torch.arange(N, dtype=torch.long).to(
-        device).view(1, 1, N).repeat([B, S, 1])
-    sqrdists = square_distance(new_xyz, xyz)
-    group_idx[sqrdists > radius**2] = N
-    group_idx = group_idx.sort(dim=-1)[0][:, :, :nsample]
-    group_first = group_idx[:, :, 0].view(B, S, 1).repeat([1, 1, nsample])
+        device).view(1, 1, N).repeat([B, S, 1])  # [B, S, N]
+    sqrdists = square_distance(new_xyz, xyz)  # [B, S, N]
+    group_idx[sqrdists > radius**2] = N  # [B, S, N]
+    if pc_padding_value is not None:
+        # if the pad values are much larger than the radius^2
+        # e.g. pad_value=10000,we no need this part
+        pad_mask = xyz[:, :, 0] == pc_padding_value  # [B, N]
+        pad_mask = pad_mask[:, None, :].repeat([1, S, 1])  # [B, S, N]
+        group_idx[pad_mask] = N
+    group_idx = group_idx.sort(dim=-1)[0][:, :, :nsample]  # [B, S, nsample]
+    group_first = group_idx[:, :, 0].view(B, S, 1).repeat(
+        [1, 1, nsample])  # [B, S, nsample], all first index
     mask = group_idx == N
+    # if not enough samples, use the first one
     group_idx[mask] = group_first[mask]
     return group_idx
 
@@ -135,6 +170,7 @@ def sample_and_group(
     returnfps=False,
     deterministic=False,
     fps_method: str = "first",
+    pc_padding_value: Optional[float] = None,
 ):
     """
     Input:
@@ -151,13 +187,24 @@ def sample_and_group(
     S = npoint
     if fps_method == "fps":
         fps_idx = farthest_point_sample(
-            xyz, npoint, deterministic=deterministic)  # [B, npoint, C]
+            xyz, npoint, pc_padding_value, deterministic=deterministic)  # [B, npoint, C]
     elif fps_method == "first":
-        fps_idx = torch.arange(npoint)[None].repeat(B, 1)
+        if pc_padding_value is None:
+            fps_idx = torch.arange(npoint)[None].repeat(B, 1)
+        else:
+            # QB: if padding_value and the points is shuffled
+            fps_idx = torch.arange(N).repeat(B, 1)
+            mask = xyz[:, :, 0] != pc_padding_value
+            # large_neg = torch.full_like(xyz[:, :, 0], float('inf'))
+            fps_idx = torch.where(mask, fps_idx, float('inf'))
+            fps_idx, _ = torch.sort(fps_idx, dim=1)
+            fps_idx = fps_idx[:, :npoint].long()
     else:
         raise ValueError(f"Unknown FPS method: {fps_method}")
+    # (B,npoint,C) take out the centroids points at fps_idx
     new_xyz = index_points(xyz, fps_idx)
-    idx = query_ball_point(radius, nsample, xyz, new_xyz)
+    idx = query_ball_point(radius, nsample, xyz, new_xyz,
+                           pc_padding_value=pc_padding_value)
     grouped_xyz = index_points(xyz, idx)  # [B, npoint, nsample, C]
     grouped_xyz_norm = grouped_xyz - new_xyz.view(B, S, 1, C)
 
@@ -165,7 +212,7 @@ def sample_and_group(
         grouped_points = index_points(points, idx)
         new_points = torch.cat(
             [grouped_xyz_norm, grouped_points], dim=-1
-        )  # [B, npoint, nsample, C+D]
+        )  # [B, npoint, nsample, C+D], C is 2 or 3, D is num of features (channels)
     else:
         new_points = grouped_xyz_norm
     if returnfps:

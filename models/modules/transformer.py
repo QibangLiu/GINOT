@@ -37,10 +37,11 @@ class ResidualCrossAttentionBlock(nn.Module):
         self.mlp = MLP(width=width)
         self.ln_3 = nn.LayerNorm(width)
 
-    def forward(self, x: torch.Tensor, data: torch.Tensor):
+    def forward(self, x: torch.Tensor, data: torch.Tensor,
+                key_padding_mask: Optional[torch.Tensor] = None):
         q = self.ln_1(x)
         kv = self.ln_2(data)
-        x = x + self.attn(q, kv, kv)[0]
+        x = x + self.attn(q, kv, kv, key_padding_mask)[0]
         x = x + self.mlp(self.ln_3(x))
         return x
 
@@ -59,9 +60,9 @@ class ResidualAttentionBlock(nn.Module):
         self.mlp = MLP(width=width)
         self.ln_2 = nn.LayerNorm(width)
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, key_padding_mask: Optional[torch.Tensor] = None):
         qkv = self.ln_1(x)
-        x = x + self.attn(qkv, qkv, qkv)[0]
+        x = x + self.attn(qkv, qkv, qkv, key_padding_mask)[0]
         x = x + self.mlp(self.ln_2(x))
         return x
 
@@ -87,7 +88,7 @@ class Transformer(nn.Module):
             ]
         )
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, key_padding_mask: Optional[torch.Tensor] = None):
         for block in self.resblocks:
-            x = block(x)
+            x = block(x, key_padding_mask)
         return x

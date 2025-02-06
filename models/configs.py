@@ -9,6 +9,12 @@ import os
 import pickle
 from sklearn.model_selection import train_test_split
 
+
+def print_info():
+    print("========================================")
+    print(" file: ", __file__)
+    print("package: ", __package__)
+    print("name: ", __name__)
 # %%
 
 script_path = os.path.dirname(os.path.abspath(__file__))
@@ -124,4 +130,121 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
 
     args_all = {"GeoEncoder": geo_encoder_args,
                 "NTOModel": NTO_args, }
+    return args_all
+
+
+# %%
+def LoadDataPoissionGeo(test_size=0.2, seed=42):
+    data_base = "/work/nvme/bbka/qibang/repository_WNbbka/GINTO_data/poisson/"
+    data_file = f"{data_base}/poisson_geo.pkl"
+    with open(data_file, "rb") as f:
+        data = pickle.load(f)
+    cells_all = data['cells']
+    cells_all = [c.reshape(-1, 4)[:, 1:] for c in cells_all]
+    nodes_all = data['nodes']
+    solutions_all = data['solutions']
+    point_clouds_all = data['point_clouds']
+    points_cloud = torch.tensor(np.array(point_clouds_all))
+    solutions = [torch.tensor(s) for s in solutions_all]
+    nodes = [torch.tensor(n[:, :2]) for n in nodes_all]
+    solutions = pad_sequence(solutions, batch_first=True,
+                             padding_value=PADDING_VALUE)
+    xyt = pad_sequence(nodes, batch_first=True, padding_value=PADDING_VALUE)
+    train_pc, test_pc, train_xyt, test_xyt, train_u, test_u, train_idx, test_idx = train_test_split(
+        points_cloud, xyt, solutions, np.arange(0, len(xyt)), test_size=test_size, random_state=seed)
+
+    train_dataset = TensorDataset(
+        train_pc, train_xyt, train_u)
+    test_dataset = TensorDataset(test_pc, test_xyt, test_u)
+    test_cells = [cells_all[i] for i in test_idx]
+    return train_dataset, test_dataset, test_cells
+
+
+def poission_geo_from_pc_configs():
+
+    fps_method = "fps"
+    out_c = 64
+    geo_encoder_model_args = {
+        "out_c": out_c,
+        "latent_d": 64,
+        "width": 128,
+        "n_point": 36,
+        "n_sample": 18,
+        "radius": 0.2,
+        "d_hidden": [128, 128],
+        "num_heads": 4,
+        "cross_attn_layers": 1,
+        "self_attn_layers": 3,
+        "d_hidden_sdfnn": [128, 128],
+        "fps_method": fps_method,
+    }
+    trunc_model_args = {"embed_dim": out_c,
+                        "cross_attn_layers": 4, "padding_value": PADDING_VALUE}
+    NTO_filebase = f"{script_path}/saved_weights/poission_geo_frompc_test"
+    args_all = {"branch_args": geo_encoder_model_args,
+                "trunk_args": trunc_model_args, "filebase": NTO_filebase}
+    return args_all
+
+
+# %%
+def LoadDataElasticityGeo(test_size=0.2, seed=42):
+    data_base = "/work/nvme/bbka/qibang/repository_WNbbka/GINTO_data/elasticity/"
+    data_file = f"{data_base}/elasticity.npz"
+    data = np.load(data_file)
+    points_cloud_all = data['points_cloud'].astype(np.float32)
+    nodes_all = data['nodes'].astype(np.float32)
+    sigma_all = data['sigma'].astype(np.float32)
+
+    points_cloud = torch.tensor(points_cloud_all)
+    nodes = torch.tensor(nodes_all)
+    sigma_shift, sigma_scale = np.mean(sigma_all), np.std(sigma_all)
+    sigma_norm = (sigma_all-sigma_shift)/sigma_scale
+    sigma = torch.tensor(sigma_norm)
+
+    # train_pc, test_pc, train_xyt, test_xyt, train_u, test_u = train_test_split(
+    #     points_cloud, nodes, sigma, test_size=test_size, random_state=seed)
+    num_train = 800
+    num_test = 200
+    train_pc = points_cloud[:num_train]
+    train_xyt = nodes[:num_train]
+    train_u = sigma[:num_train]
+    test_pc = points_cloud[num_train:num_train+num_test]
+    test_xyt = nodes[num_train:num_train+num_test]
+    test_u = sigma[num_train:num_train+num_test]
+
+    train_dataset = TensorDataset(
+        train_pc, train_xyt, train_u)
+    test_dataset = TensorDataset(test_pc, test_xyt, test_u)
+
+    def SigmaInverse(x):
+        # x: (Nb, N, 3), mises stress, ux, uy
+        return x*sigma_scale+sigma_shift
+    s_inverse = SigmaInverse
+
+    return train_dataset, test_dataset, s_inverse
+
+
+def elasticity_geo_from_pc_configs():
+
+    fps_method = "fps"
+    out_c = 64
+    geo_encoder_model_args = {
+        "out_c": out_c,
+        "latent_d": 64,
+        "width": 128,
+        "n_point": 36,
+        "n_sample": 18,
+        "radius": 0.2,
+        "d_hidden": [128, 128],
+        "num_heads": 4,
+        "cross_attn_layers": 1,
+        "self_attn_layers": 3,
+        "d_hidden_sdfnn": [128, 128],
+        "fps_method": fps_method,
+    }
+    trunc_model_args = {"embed_dim": out_c,
+                        "cross_attn_layers": 4}
+    NTO_filebase = f"{script_path}/saved_weights/elasticity_geo_frompc_compare"
+    args_all = {"branch_args": geo_encoder_model_args,
+                "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all

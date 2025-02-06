@@ -112,7 +112,8 @@ def farthest_point_sample(xyz, npoint, pc_padding_value: Optional[float] = None,
             farthest = non_pad_idx[torch.arange(B), ids]
     else:
         if deterministic:
-            farthest = torch.arange(0, B, dtype=torch.long).to(device)
+            # farthest = torch.arange(0, B, dtype=torch.long).to(device)
+            farthest = torch.zeros(B, dtype=torch.long).to(device)
         else:
             farthest = torch.randint(0, N, (B,), dtype=torch.long).to(device)
 

@@ -15,7 +15,7 @@ def download_data(data_path):
         gdown.download(url, data_path,)
 
 
-data_path = "/work/nvme/bbka/qibang/repository_WNbbka/GINTO_data/elasticity/"
+data_path = "../../data/elasticity/"
 
 # %%
 # check the data

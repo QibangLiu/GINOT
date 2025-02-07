@@ -155,7 +155,7 @@ def run_all():
 
     data_all = {'cells': cells_all, 'celltypes': celltypes_all, 'nodes': nodes_all,
                 'solutions': solutions_all, 'point_clouds': point_clouds_all}
-    filebase = "/work/nvme/bbka/qibang/repository_WNbbka/GINTO_data/poisson/"
+    filebase = "../../data/poisson/"
 
     os.makedirs(filebase, exist_ok=True)
     with open(filebase+'poisson_geo.pkl', 'wb') as f:

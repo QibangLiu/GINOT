@@ -10,16 +10,11 @@ import pickle
 from sklearn.model_selection import train_test_split
 
 
-def print_info():
-    print("========================================")
-    print(" file: ", __file__)
-    print("package: ", __package__)
-    print("name: ", __name__)
 # %%
 
-script_path = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 
-DATA_FILEBASE = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel"
+DATA_FILEBASE = f"{SCRIPT_PATH}/../data"
 DATA_FILE = f"{DATA_FILEBASE}/node_pc_mises_disp_laststep_aug.pkl"
 
 
@@ -100,7 +95,7 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
         "d_hidden_sdfnn": [128, 128],
         "fps_method": fps_method,
     }
-    geo_encoder_file_base = f"{script_path}/saved_weights/geoencoder_outc{out_c}_latentdim{latent_d}_fps{fps_method}"
+    geo_encoder_file_base = f"{SCRIPT_PATH}/saved_weights/geoencoder_outc{out_c}_latentdim{latent_d}_fps{fps_method}"
     geo_encoder_args = {
         "model_args": geo_encoder_model_args,
         "filebase": geo_encoder_file_base,
@@ -115,7 +110,7 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
     dropout = None
     NTO_img_shape = (1, 120, 120)
 
-    NTO_filebase = f"{script_path}/saved_weights/NTO_outc{out_c}_latentdim{latent_d}_noatt_normgroups-{norm_groups}_dropout-{dropout}_posenc"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/NTO_outc{out_c}_latentdim{latent_d}_noatt_normgroups-{norm_groups}_dropout-{dropout}_posenc"
 
     NTO_model_args = {"embed_dim": embed_dim,
                       "img_shape": NTO_img_shape,
@@ -135,8 +130,7 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
 
 # %%
 def LoadDataPoissionGeo(test_size=0.2, seed=42):
-    data_base = "/work/nvme/bbka/qibang/repository_WNbbka/GINTO_data/poisson/"
-    data_file = f"{data_base}/poisson_geo.pkl"
+    data_file = f"{DATA_FILEBASE}/poisson/poisson_geo.pkl"
     with open(data_file, "rb") as f:
         data = pickle.load(f)
     cells_all = data['cells']
@@ -180,7 +174,7 @@ def poission_geo_from_pc_configs():
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 4, "padding_value": PADDING_VALUE}
-    NTO_filebase = f"{script_path}/saved_weights/poission_geo_frompc_test"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_geo_frompc_test"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
@@ -188,8 +182,7 @@ def poission_geo_from_pc_configs():
 
 # %%
 def LoadDataElasticityGeo(test_size=0.2, seed=42):
-    data_base = "/work/nvme/bbka/qibang/repository_WNbbka/GINTO_data/elasticity/"
-    data_file = f"{data_base}/elasticity.npz"
+    data_file = f"{DATA_FILEBASE}/elasticity/elasticity.npz"
     data = np.load(data_file)
     points_cloud_all = data['points_cloud'].astype(np.float32)
     nodes_all = data['nodes'].astype(np.float32)
@@ -203,14 +196,14 @@ def LoadDataElasticityGeo(test_size=0.2, seed=42):
 
     # train_pc, test_pc, train_xyt, test_xyt, train_u, test_u = train_test_split(
     #     points_cloud, nodes, sigma, test_size=test_size, random_state=seed)
-    num_train = 800
+    num_train = 1000
     num_test = 200
     train_pc = points_cloud[:num_train]
     train_xyt = nodes[:num_train]
     train_u = sigma[:num_train]
-    test_pc = points_cloud[num_train:num_train+num_test]
-    test_xyt = nodes[num_train:num_train+num_test]
-    test_u = sigma[num_train:num_train+num_test]
+    test_pc = points_cloud[-num_test:]
+    test_xyt = nodes[-num_test:]
+    test_u = sigma[-num_test:]
 
     train_dataset = TensorDataset(
         train_pc, train_xyt, train_u)
@@ -238,13 +231,13 @@ def elasticity_geo_from_pc_configs():
         "d_hidden": [128, 128],
         "num_heads": 4,
         "cross_attn_layers": 1,
-        "self_attn_layers": 3,
+        "self_attn_layers": 2,
         "d_hidden_sdfnn": [128, 128],
         "fps_method": fps_method,
     }
     trunc_model_args = {"embed_dim": out_c,
-                        "cross_attn_layers": 4}
-    NTO_filebase = f"{script_path}/saved_weights/elasticity_geo_frompc_compare"
+                        "cross_attn_layers": 3}
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/elasticity_geo_from_pc"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all

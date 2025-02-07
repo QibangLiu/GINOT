@@ -99,18 +99,20 @@ def NTOModelDefinition(branch_args, trunc_args):
 
 
 # %%
-def EvaluateForwardModel(trainer, test_loader):
+def EvaluateForwardModel(trainer, test_loader, train_loader):
     trainer.load_weights(device=device)
-    y_pred, y_true = trainer.predict(test_loader)
 
-    error_s = []
-    for y_p, y_t in zip(y_pred, y_true):
-        s_p, s_t = y_p[:], y_t[:]
-        e_s = np.linalg.norm(s_p-s_t)/np.linalg.norm(s_t)
-        error_s.append(e_s)
+    def cal_l2_error(test_loader):
+        y_pred, y_true = trainer.predict(test_loader)
+        error_s = []
+        for y_p, y_t in zip(y_pred, y_true):
+            s_p, s_t = y_p[:], y_t[:]
+            e_s = np.linalg.norm(s_p-s_t)/np.linalg.norm(s_t)
+            error_s.append(e_s)
+        error_s = np.array(error_s)
+        return error_s
 
-    error_s = np.array(error_s)
-
+    error_s = cal_l2_error(test_loader)
     sort_idx = np.argsort(error_s)
     idx_best = sort_idx[0]
     idx_32perc = sort_idx[int(len(sort_idx)*0.32)]
@@ -121,13 +123,18 @@ def EvaluateForwardModel(trainer, test_loader):
     for label, idx in zip(labels, index_list):
         print(f"{label} L2 error: {error_s[idx]}")
 
-    print(f"Mean L2 error: {np.mean(error_s)}, std: {np.std(error_s)}")
+    print(
+        f"Mean L2 error for test data: {np.mean(error_s)}, std: {np.std(error_s)}")
+
+    error_s = cal_l2_error(train_loader)
+    print(
+        f"Mean L2 error for training data: {np.mean(error_s)}, std: {np.std(error_s)}")
 
 
 def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3):
 
     train_dataset, test_dataset, s_inverse = configs.LoadDataElasticityGeo()
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=20, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=256, shuffle=False)
 
     class TRAINER(torch_trainer.TorchTrainer):
@@ -181,7 +188,7 @@ def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3):
                     epochs=epochs, print_freq=1)
     trainer.save_logs()
 
-    EvaluateForwardModel(trainer, test_loader)
+    EvaluateForwardModel(trainer, test_loader, train_loader)
     return trainer
 
 
@@ -190,7 +197,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--train_flag", type=str, default="start")
-    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--epochs", type=int, default=3000)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     args, unknown = parser.parse_known_args()
     print(vars(args))
@@ -207,3 +214,5 @@ if __name__ == "__main__":
     trainer = TrainNTOModel(NTO_model, filebase, args.train_flag,
                             epochs=args.epochs, lr=args.learning_rate)
     print(filebase, " training finished")
+
+# %%

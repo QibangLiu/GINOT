@@ -177,7 +177,8 @@ class SimplePerceiver(nn.Module):
         *,
         width: int,
         heads: int,
-        layers: int
+        layers: int,
+        dropout: float = 0.0,
     ):
         super().__init__()
         self.width = width
@@ -186,7 +187,8 @@ class SimplePerceiver(nn.Module):
             [
                 ResidualCrossAttentionBlock(
                     width=width,
-                    heads=heads
+                    heads=heads,
+                    dropout=dropout,
                 )
                 for _ in range(layers)
             ]

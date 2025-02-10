@@ -54,26 +54,47 @@ class Branch(nn.Module):
 # %%
 
 class Trunk(nn.Module):
-    def __init__(self, branch, embed_dim=64, cross_attn_layers=4, in_channels=2, out_channels=1, emd_version="nerf"):
+    def __init__(self, branch, embed_dim=64, cross_attn_layers=4,
+                 in_channels=3, out_channels=1,
+                 dropout=0.0, emd_version="nerf"):
         super().__init__()
         # d = position_encoding_channels(emd_version)
-        self.Q_encoder = MLP(embed_dim, in_channels)
+        # self.Q_encoder = MLP(embed_dim, in_channels)
+        self.Q_encoder = nn.Sequential(nn.Linear(in_channels, 2*embed_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(2*embed_dim, 3*embed_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(3*embed_dim, 3*embed_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(3*embed_dim, 3*embed_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(3*embed_dim, 2*embed_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(2*embed_dim, embed_dim)
+                                       )
         self.branch = branch
         self.resblocks = nn.ModuleList(
             [
                 ResidualCrossAttentionBlock(
                     width=embed_dim,
-                    heads=4
+                    heads=4,
+                    dropout=dropout,
                 )
                 for _ in range(cross_attn_layers)
             ]
         )
-        self.output_proj = nn.Linear(
-            embed_dim, out_channels)
+        self.output_proj = nn.Sequential(nn.Linear(embed_dim, 2*embed_dim),
+                                         nn.ReLU(),
+                                         nn.Dropout(dropout),
+                                         nn.Linear(2*embed_dim, 2*embed_dim),
+                                         nn.ReLU(),
+                                         nn.Dropout(dropout),
+                                         nn.Linear(2*embed_dim, out_channels)
+                                         )
 
     def forward(self, xyt, pc):
         latent = self.branch(pc)  # (B, latenc, embed_dim)
-        # (B,N,2)->(B,N,embed_dim)
+        # (B,N,ndim)->(B,N,embed_dim)
         # xyt = encode_position('nerf', position=xyt)
         x = self.Q_encoder(xyt)
         for block in self.resblocks:
@@ -133,7 +154,7 @@ def EvaluateForwardModel(trainer, test_loader, train_loader):
 
 def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3):
 
-    train_dataset, test_dataset, s_inverse = configs.LoadDataElasticityGeo()
+    train_dataset, test_dataset, p_inverse = configs.LoadDataShapeCarGeo()
     train_loader = DataLoader(train_dataset, batch_size=20, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=256, shuffle=False)
 
@@ -165,7 +186,7 @@ def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3):
             y_pred = np.concatenate(y_pred, axis=0)
             y_true = np.concatenate(y_true, axis=0)
 
-            return s_inverse(y_pred), s_inverse(y_true)
+            return p_inverse(y_pred), p_inverse(y_true)
 
     trainer = TRAINER(
         NTO_model, device, filebase)
@@ -173,7 +194,7 @@ def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3):
     checkpoint = torch_trainer.ModelCheckpoint(
         monitor="val_loss", save_best_only=True)
     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.7, patience=40)
+        optimizer, factor=0.7, patience=200)
     trainer.compile(
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
@@ -197,17 +218,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--train_flag", type=str, default="start")
-    parser.add_argument("--epochs", type=int, default=1000)
+    parser.add_argument("--epochs", type=int, default=500)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     args, unknown = parser.parse_known_args()
     print(vars(args))
 
-    configs_poission_geo_from_pc = configs.elasticity_geo_from_pc_configs()
+    configs_geo_from_pc = configs.shape_car_geo_from_pc_configs()
 
-    filebase = configs_poission_geo_from_pc["filebase"]
-    trunk_args = configs_poission_geo_from_pc["trunk_args"]
-    branch_args = configs_poission_geo_from_pc["branch_args"]
-    print(configs_poission_geo_from_pc)
+    filebase = configs_geo_from_pc["filebase"]
+    trunk_args = configs_geo_from_pc["trunk_args"]
+    branch_args = configs_geo_from_pc["branch_args"]
+    print(configs_geo_from_pc)
 
     NTO_model = NTOModelDefinition(branch_args, trunk_args)
 

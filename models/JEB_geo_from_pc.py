@@ -54,27 +54,60 @@ class Branch(nn.Module):
 # %%
 
 class Trunk(nn.Module):
-    def __init__(self, branch, embed_dim=64, cross_attn_layers=4, in_channels=2, out_channels=1, emd_version="nerf"):
+    def __init__(self, branch, embed_dim=64, cross_attn_layers=4, num_heads=4,
+                 in_channels=3, out_channels=1,
+                 dropout=0.0, emd_version="nerf", padding_value=-10):
         super().__init__()
-        # d = position_encoding_channels(emd_version)
-        self.Q_encoder = MLP(embed_dim, in_channels)
+        self.padding_value = padding_value
+        d = position_encoding_channels(emd_version)
+        # self.Q_encoder = MLP(embed_dim, in_channels)
+        self.Q_encoder = nn.Sequential(nn.Linear(d*in_channels, 2*embed_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(2*embed_dim, 3*embed_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(3*embed_dim, 3*embed_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(3*embed_dim, 3*embed_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(3*embed_dim, 2*embed_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(2*embed_dim, embed_dim)
+                                       )
         self.branch = branch
         self.resblocks = nn.ModuleList(
             [
                 ResidualCrossAttentionBlock(
                     width=embed_dim,
-                    heads=4
+                    heads=num_heads,
+                    dropout=dropout,
                 )
                 for _ in range(cross_attn_layers)
             ]
         )
-        self.output_proj = nn.Linear(
-            embed_dim, out_channels)
+        self.output_proj = nn.Sequential(nn.Linear(embed_dim, 2*embed_dim),
+                                         nn.ReLU(),
+                                         nn.Dropout(dropout),
+                                         nn.Linear(2*embed_dim, 2*embed_dim),
+                                         nn.ReLU(),
+                                         nn.Dropout(dropout),
+                                         nn.Linear(2*embed_dim, out_channels)
+                                         )
+        self.step = 0
 
     def forward(self, xyt, pc):
+        self.step += 1
+        print(f"Step {self.step}, training{self.training}")
+        print(
+            f"Allocated memory: {torch.cuda.memory_allocated(device) / 1024**3:.2f} GB")
+        print(
+            f"Cached memory: {torch.cuda.memory_reserved(device) / 1024**3:.2f} GB")
         latent = self.branch(pc)  # (B, latenc, embed_dim)
-        # (B,N,2)->(B,N,embed_dim)
-        # xyt = encode_position('nerf', position=xyt)
+        print(
+            f"Allocated memory: {torch.cuda.memory_allocated(device) / 1024**3:.2f} GB")
+        print(
+            f"Cached memory: {torch.cuda.memory_reserved(device) / 1024**3:.2f} GB")
+        # (B,N,ndim)->(B,N,embed_dim)
+        xyt = encode_position('nerf', position=xyt)
         x = self.Q_encoder(xyt)
         for block in self.resblocks:
             x = block(x, latent)  # (B, N, embed_dim)
@@ -133,9 +166,9 @@ def EvaluateForwardModel(trainer, test_loader, train_loader):
 
 def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3):
 
-    train_dataset, test_dataset, s_inverse = configs.LoadDataElasticityGeo()
-    train_loader = DataLoader(train_dataset, batch_size=20, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=256, shuffle=False)
+    train_dataset, test_dataset, cells_train, cells_test, s_inverse, pc_inverse, vert_inverse = configs.LoadDataGEJEBGeo()
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
     class TRAINER(torch_trainer.TorchTrainer):
         def __init__(self, models, device, filebase):
@@ -145,8 +178,10 @@ def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3):
             pc = data[0].to(self.device)
             xyt = data[1].to(self.device)
             y_true = data[2].to(self.device)
+            mask = (y_true != self.models[0].padding_value).float()
             y_pred = self.models[0](xyt, pc)
-            loss = nn.MSELoss()(y_true, y_pred)
+            loss = nn.MSELoss(reduction='none')(y_true, y_pred)
+            loss = (loss*mask).sum()/(mask.sum()+1)
             loss_dic = {"loss": loss.item()}
             return loss, loss_dic
 
@@ -159,13 +194,19 @@ def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3):
                     pc = data[0].to(self.device)
                     xyt = data[1].to(self.device)
                     y_true_batch = data[2].to(self.device)
+                    mask = (y_true_batch != self.models[0].padding_value)
                     pred = self.models[0](xyt, pc)
-                    y_pred.append(pred.cpu().numpy())
-                    y_true.append(y_true_batch.cpu().numpy())
-            y_pred = np.concatenate(y_pred, axis=0)
-            y_true = np.concatenate(y_true, axis=0)
+                    pred = s_inverse(pred)
+                    y_true_batch = s_inverse(y_true_batch)
+                    pred = [x[i].view(-1, *i.shape[1:]).cpu().detach().numpy()
+                            for x, i in zip(pred, mask)]
+                    y_true_batch = [x[i].view(-1, *i.shape[1:]).cpu().detach().numpy()
+                                    for x, i in zip(y_true_batch, mask)]
 
-            return s_inverse(y_pred), s_inverse(y_true)
+                    y_pred = y_pred+pred
+                    y_true = y_true+y_true_batch
+
+            return y_pred, y_true
 
     trainer = TRAINER(
         NTO_model, device, filebase)
@@ -179,6 +220,8 @@ def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3):
         lr_scheduler=lr_scheduler,
         checkpoint=checkpoint,
         scheduler_metric_name="val_loss",
+        window_size=600,
+        sequence_idx=[1, 2],
     )
     if train_flag == "continue":
         trainer.load_weights(device=device)
@@ -197,17 +240,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--train_flag", type=str, default="start")
-    parser.add_argument("--epochs", type=int, default=1000)
+    parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     args, unknown = parser.parse_known_args()
     print(vars(args))
 
-    configs_poission_geo_from_pc = configs.elasticity_geo_from_pc_configs()
+    configs_geo_from_pc = configs.JEB_geo_from_pc_configs()
 
-    filebase = configs_poission_geo_from_pc["filebase"]
-    trunk_args = configs_poission_geo_from_pc["trunk_args"]
-    branch_args = configs_poission_geo_from_pc["branch_args"]
-    print(configs_poission_geo_from_pc)
+    filebase = configs_geo_from_pc["filebase"]
+    trunk_args = configs_geo_from_pc["trunk_args"]
+    branch_args = configs_geo_from_pc["branch_args"]
+    print(configs_geo_from_pc)
 
     NTO_model = NTOModelDefinition(branch_args, trunk_args)
 

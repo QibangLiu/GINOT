@@ -118,6 +118,17 @@ class TorchTrainer():
         window_size=None,
         sequence_idx=None,
     ):
+        """
+        - This function is used setting up the training environment.
+        - Args:
+            optimizer: torch.optim.Optimizer
+            loss_fn: loss function, may be ovre-written in the evaluate_losses function
+            checkpoint: ModelCheckpoint, for saving model weights
+            lr_scheduler: torch.optim.lr_scheduler, for learning rate decay
+            scheduler_metric_name: str, the metric name for lr_scheduler
+            window_size: int, the size of the sliding window
+            sequence_idx: int list or tuple, indicate the index of sliding data in the input data loader
+        """
         combined_params = []
         for model in self.models:
             combined_params += list(model.parameters())
@@ -226,6 +237,7 @@ class TorchTrainer():
             data: torch.utils.data.DataLoader,
             self.window_size: int, the size of the sliding window
             self.sequence_idx: int list or tuple, indicate the index of sliding data in the input data loader
+                                the data has format of (B,S,...), where B is batch size, S is sequence length
         - Output:
             loss_vals: dict, for tracking loss values, will be stored in self.logs
             no return

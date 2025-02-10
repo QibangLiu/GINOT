@@ -27,22 +27,24 @@ class ResidualCrossAttentionBlock(nn.Module):
     def __init__(
         self,
         width: int,
-        heads: int
+        heads: int,
+        dropout=0.0,
     ):
         super().__init__()
         self.attn = nn.MultiheadAttention(
-            embed_dim=width, num_heads=heads, batch_first=True)
+            embed_dim=width, num_heads=heads, batch_first=True, dropout=dropout)
         self.ln_1 = nn.LayerNorm(width)
         self.ln_2 = nn.LayerNorm(width)
         self.mlp = MLP(width=width)
         self.ln_3 = nn.LayerNorm(width)
+        self.dropout = nn.Dropout(dropout)  # Dropout for MLP output
 
     def forward(self, x: torch.Tensor, data: torch.Tensor,
                 key_padding_mask: Optional[torch.Tensor] = None):
         q = self.ln_1(x)
         kv = self.ln_2(data)
         x = x + self.attn(q, kv, kv, key_padding_mask)[0]
-        x = x + self.mlp(self.ln_3(x))
+        x = x + self.dropout(self.mlp(self.ln_3(x)))
         return x
 
 
@@ -52,18 +54,20 @@ class ResidualAttentionBlock(nn.Module):
         *,
         width: int,
         heads: int,
+        dropout=0.0,
     ):
         super().__init__()
         self.attn = nn.MultiheadAttention(
-            embed_dim=width, num_heads=heads, batch_first=True)
+            embed_dim=width, num_heads=heads, batch_first=True, dropout=dropout)
         self.ln_1 = nn.LayerNorm(width)
         self.mlp = MLP(width=width)
         self.ln_2 = nn.LayerNorm(width)
+        self.dropout = nn.Dropout(dropout)  # Dropout for MLP output
 
     def forward(self, x: torch.Tensor, key_padding_mask: Optional[torch.Tensor] = None):
         qkv = self.ln_1(x)
         x = x + self.attn(qkv, qkv, qkv, key_padding_mask)[0]
-        x = x + self.mlp(self.ln_2(x))
+        x = x + self.dropout(self.mlp(self.ln_2(x)))
         return x
 
 
@@ -74,6 +78,7 @@ class Transformer(nn.Module):
         width: int,
         heads: int,
         layers: int,
+        dropout=0.0,
     ):
         super().__init__()
         self.width = width
@@ -83,6 +88,7 @@ class Transformer(nn.Module):
                 ResidualAttentionBlock(
                     width=width,
                     heads=heads,
+                    dropout=dropout,
                 )
                 for _ in range(layers)
             ]

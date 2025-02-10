@@ -78,7 +78,7 @@ class ResidualBlockConv(nn.Module):
         self.net = nn.ModuleList()
         self.norm = norm_layer(channel_in, groups)
         self.net.append(activation_fn)
-        if dropout is not None:
+        if dropout is not None and dropout > 0:
             self.net.append(nn.Dropout2d(p=dropout))
         self.net.append(
             nn.Conv2d(channel_in, channel_out, kernel_size=3, padding="same")
@@ -88,7 +88,7 @@ class ResidualBlockConv(nn.Module):
         else:
             self.net.append(nn.GroupNorm(groups, channel_out))
         self.net.append(activation_fn)
-        if dropout is not None:
+        if dropout is not None and dropout > 0:
             self.net.append(nn.Dropout2d(p=dropout))
         self.net.append(
             nn.Conv2d(channel_out, channel_out, kernel_size=3, padding="same")
@@ -313,7 +313,7 @@ class ResidualBlockConvTimeStep(nn.Module):
     ):
         super().__init__()
         lay_list1 = [norm_layer(channel_in, groups), activation_fn]
-        if dropout is not None:
+        if dropout is not None and dropout > 0:
             lay_list1.append(nn.Dropout(dropout))
         lay_list1.append(
             nn.Conv2d(channel_in, channel_out, kernel_size=3, padding="same")
@@ -329,7 +329,7 @@ class ResidualBlockConvTimeStep(nn.Module):
         )
 
         lay_list2 = [norm_layer(channel_out, groups), activation_fn]
-        if dropout is not None:
+        if dropout is not None and dropout > 0:
             lay_list2.append(nn.Dropout(dropout))
         lay_list2.append(
             nn.Conv2d(channel_out, channel_out, kernel_size=3, padding="same")

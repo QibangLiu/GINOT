@@ -8,6 +8,7 @@ import torch
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import warnings
 if __package__:
     from .configs import models_configs, LoadData
     from .modules.params_proj import ChannelsParamsProj
@@ -22,6 +23,7 @@ else:
     from modules.point_encoding import PointSetEmbedding, SimplePerceiver
     from modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
     from trainer import torch_trainer
+
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -50,6 +52,7 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
                  cross_attn_layers: int = 1,
                  self_attn_layers: int = 3,
                  pc_padding_val: Optional[int] = None,
+                 dropout: float = 0.0,
                  *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         """
@@ -74,9 +77,12 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         self.out_c = out_c
         self.pc_padding_val = pc_padding_val
         self.fps_method = fps_method
+        if d_hidden[-1] != self.width:
+            warnings.warn(
+                "PointCloudPerceiverChannelsEncoder: d_hidden[-1] should be equal to width. d_hidden[-1] is set to width!!!")
+            d_hidden[-1] = self.width
         # position embeding + linear layer
         self.pos_emb_linear = PosEmbLinear("nerf", input_channels, self.width)
-
         d_input = self.width
         self.point_set_embedding \
             = PointSetEmbedding(ndim=input_channels, radius=radius, n_point=self.n_point,
@@ -93,10 +99,9 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         self.ln_post = nn.LayerNorm(self.width)
 
         self.encoder = SimplePerceiver(
-            width=self.width, heads=num_heads, layers=cross_attn_layers)
-
+            width=self.width, heads=num_heads, layers=cross_attn_layers, dropout=dropout)
         self.processor = Transformer(
-            width=self.width, heads=num_heads, layers=self_attn_layers)
+            width=self.width, heads=num_heads, layers=self_attn_layers, dropout=dropout)
         self.output_proj = nn.Linear(
             self.width, self.out_c)
 
@@ -128,7 +133,6 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         #      \ pointNet             /\ mean (dim=2)
         #      _\/ permute           / Conv, C3=d_hidden[-1]
         #       [B, C2+ndim,  n_sample, n_point]
-        # TODO: add padding value
         data_tokens = self.point_set_embedding(
             xyz, points, pc_padding_val_pointnet2)
         # [B, Co, No] -> [B, No, Co]
@@ -214,7 +218,7 @@ class implicit_sdf(nn.Module):
         return x.squeeze()
 
 
-def GeoEncoderModelDefinition(out_c=128, latent_d=128,
+def GeoEncoderModelDefinition(input_channels=2, out_c=128, latent_d=128,
                               width=128, n_point=128,
                               n_sample=8, radius=0.2,
                               d_hidden=[128, 128],
@@ -222,14 +226,16 @@ def GeoEncoderModelDefinition(out_c=128, latent_d=128,
                               num_heads=4, cross_attn_layers=1,
                               self_attn_layers=3,
                               pc_padding_val: Optional[int] = None,
-                              d_hidden_sdfnn=[128, 128]):
+                              d_hidden_sdfnn=[128, 128],
+                              dropout=0.0):
 
     geo_encoder = PointCloudPerceiverChannelsEncoder(
-        input_channels=2, out_c=out_c, width=width,
+        input_channels=input_channels, out_c=out_c, width=width,
         latent_d=latent_d, n_point=n_point, n_sample=n_sample,
         radius=radius, d_hidden=d_hidden, fps_method=fps_method,
         num_heads=num_heads, cross_attn_layers=cross_attn_layers,
-        self_attn_layers=self_attn_layers, pc_padding_val=pc_padding_val)
+        self_attn_layers=self_attn_layers,
+        pc_padding_val=pc_padding_val, dropout=dropout)
     sdf_NN = implicit_sdf(latent_d=latent_d, d_hidden_sdfnn=d_hidden_sdfnn)
     tot_num_params = sum(p.numel() for p in geo_encoder.parameters())
     trainable_params = sum(p.numel()

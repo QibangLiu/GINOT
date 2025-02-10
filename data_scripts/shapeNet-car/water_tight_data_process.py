@@ -14,6 +14,8 @@ pv.global_theme.trame.server_proxy_enabled = True
 
 
 def download_data(data_path):
+    # download the data from:
+    # https://drive.google.com/drive/folders/1PMuOGUO2A9rzAP3YM8ra3v8ybE8X9foh
     file_names = ["car-cfd.tgz", "car-pressure-data.zip"]
 
     # Extract from the shared URL

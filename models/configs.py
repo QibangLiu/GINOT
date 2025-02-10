@@ -210,7 +210,6 @@ def LoadDataElasticityGeo(test_size=0.2, seed=42):
     test_dataset = TensorDataset(test_pc, test_xyt, test_u)
 
     def SigmaInverse(x):
-        # x: (Nb, N, 3), mises stress, ux, uy
         return x*sigma_scale+sigma_shift
     s_inverse = SigmaInverse
 
@@ -224,11 +223,11 @@ def elasticity_geo_from_pc_configs():
     geo_encoder_model_args = {
         "out_c": out_c,
         "latent_d": 64,
-        "width": 128,
+        "width": 64,
         "n_point": 36,
         "n_sample": 18,
         "radius": 0.2,
-        "d_hidden": [128, 128],
+        "d_hidden": [64, 64],
         "num_heads": 4,
         "cross_attn_layers": 1,
         "self_attn_layers": 2,
@@ -236,8 +235,178 @@ def elasticity_geo_from_pc_configs():
         "fps_method": fps_method,
     }
     trunc_model_args = {"embed_dim": out_c,
-                        "cross_attn_layers": 3}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/elasticity_geo_from_pc"
+                        "cross_attn_layers": 6}
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/elasticity_geo_from_pc_for"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
+
+# %%
+# ==================================ShapeCar====================================
+
+
+def LoadDataShapeCarGeo():
+    data_file = f"{DATA_FILEBASE}/shapeNet-car/pc_pressure_data.npz"
+    data = np.load(data_file)
+    points_cloud = data['points_cloud'].astype(np.float32)
+    nodes = points_cloud.copy()
+    # shuffle the points in the point cloud
+    for pc in points_cloud:
+        np.random.shuffle(pc)
+    pressures = data['pressures'].astype(np.float32)
+
+    points_cloud = torch.tensor(points_cloud)
+    nodes = torch.tensor(nodes)
+    p_shift, p_scale = np.mean(pressures), np.std(pressures)
+    p_norm = (pressures-p_shift)/p_scale
+    pressures = torch.tensor(p_norm)
+
+    # num_train = 500
+    # num_test = 111
+    # train_pc = points_cloud[:num_train]
+    # train_xyt = nodes[:num_train]
+    # train_u = pressures[:num_train]
+    # test_pc = points_cloud[-num_test:]
+    # test_xyt = nodes[-num_test:]
+    # test_u = pressures[-num_test:]
+    train_pc, test_pc, train_xyt, test_xyt, train_u, test_u = train_test_split(
+        points_cloud, nodes, pressures, test_size=0.18, random_state=42)
+
+    train_dataset = TensorDataset(
+        train_pc, train_xyt, train_u)
+    test_dataset = TensorDataset(test_pc, test_xyt, test_u)
+
+    def PressureInverse(x):
+        return x*p_scale+p_shift
+    p_inverse = PressureInverse
+
+    return train_dataset, test_dataset, p_inverse
+
+
+def shape_car_geo_from_pc_configs():
+
+    fps_method = "first"
+    out_c = 32
+    dropout = 0.1
+    geo_encoder_model_args = {
+        "input_channels": 3,
+        "out_c": out_c,
+        "latent_d": 32,
+        "width": 32,
+        "n_point": 512,
+        "n_sample": 256,
+        "radius": 0.4,
+        "d_hidden": [64, 64],
+        "num_heads": 4,
+        "cross_attn_layers": 1,
+        "self_attn_layers": 2,
+        "d_hidden_sdfnn": [128, 128],
+        "fps_method": fps_method,
+        "dropout": dropout
+    }
+    trunc_model_args = {"embed_dim": out_c,
+                        "cross_attn_layers": 3, "dropout": dropout}
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/shape-car_geo_from_pc_test"
+    args_all = {"branch_args": geo_encoder_model_args,
+                "trunk_args": trunc_model_args, "filebase": NTO_filebase}
+    return args_all
+
+
+# =============================================================================
+# %%
+# ========================GE Jet Engine Bracket================================
+def LoadDataGEJEBGeo(test_size=0.2, seed=42):
+    data_file = f"{DATA_FILEBASE}/GEJetEngineBracket/GE-JEB.pkl"
+    with open(data_file, "rb") as f:
+        data = pickle.load(f)
+    vertices = data['vertices']
+    cells = data['cells']
+    nodal_stress = data['nodal_stress']
+    points_cloud = data['points_cloud']
+    vert_concat = np.concatenate(vertices, axis=0, dtype=np.float32)
+    vert_shift, vert_scale = np.mean(
+        vert_concat, axis=0), np.std(vert_concat, axis=0)
+    vert_shift = vert_shift[None, :]
+    vert_scale = vert_scale[None, :]
+    pc_concat = np.concatenate(points_cloud, axis=0, dtype=np.float32)
+    pc_shift, pc_scale = np.mean(pc_concat, axis=0), np.std(pc_concat, axis=0)
+    pc_shift = pc_shift[None, :]
+    pc_scale = pc_scale[None, :]
+    sigma_concat = np.concatenate(nodal_stress, axis=0, dtype=np.float32)
+    sigma_shift, sigma_scale = np.mean(
+        sigma_concat), np.std(sigma_concat)
+
+    vertices_norm = [torch.tensor(
+        (v.astype(np.float32)-vert_shift)/vert_scale) for v in vertices]
+    pc_norm = [torch.tensor((pc.astype(np.float32)-pc_shift)/pc_scale)
+               for pc in points_cloud]
+    sigma_norm = [torch.tensor((s.astype(np.float32)-sigma_shift)/sigma_scale)
+                  for s in nodal_stress]
+    pc_shift = torch.tensor(pc_shift)[None, :]
+    pc_scale = torch.tensor(pc_scale)[None, :]
+    vert_shift = torch.tensor(vert_shift)[None, :]
+    vert_scale = torch.tensor(vert_scale)[None, :]
+
+    S = pad_sequence(sigma_norm, batch_first=True,
+                     padding_value=PADDING_VALUE)
+    points_cloud = pad_sequence(
+        pc_norm, batch_first=True, padding_value=PADDING_VALUE)
+    vertices = pad_sequence(vertices_norm, batch_first=True,
+                            padding_value=PADDING_VALUE)
+    train_pc, test_pc, train_xyt, test_xyt, train_u, test_u, train_ids, test_ids = train_test_split(
+        points_cloud, vertices, S, np.arange(len(cells)), test_size=test_size, random_state=seed)
+    train_dataset = TensorDataset(
+        train_pc, train_xyt, train_u)
+    test_dataset = TensorDataset(test_pc, test_xyt, test_u)
+    cells_test = [cells[i] for i in test_ids]
+    cells_train = [cells[i] for i in train_ids]
+
+    def SigmaInverse(x):
+        return x*sigma_scale+sigma_shift
+    s_inverse = SigmaInverse
+
+    def PCInverse(x):
+        pc_scale = pc_scale.to(x.device)
+        pc_shift = pc_shift.to(x.device)
+        return x*pc_scale+pc_shift
+    pc_inverse = PCInverse
+
+    def VertInverse(x):
+        vert_scale = vert_scale.to(x.device)
+        vert_shift = vert_shift.to(x.device)
+        return x*vert_scale+vert_shift
+    vert_inverse = VertInverse
+
+    return train_dataset, test_dataset, cells_train, cells_test, s_inverse, pc_inverse, vert_inverse
+
+
+def JEB_geo_from_pc_configs():
+    fps_method = "first"
+    out_c = 16
+    dropout = 0
+    geo_encoder_model_args = {
+        "input_channels": 3,
+        "out_c": out_c,
+        "latent_d": 32,
+        "width": 16,
+        "n_point": 1024,
+        "n_sample": 256,
+        "radius": 0.5,
+        "d_hidden": [16, 16],
+        "num_heads": 4,
+        "cross_attn_layers": 1,
+        "self_attn_layers": 1,
+        "d_hidden_sdfnn": [128, 128],
+        "fps_method": fps_method,
+        "pc_padding_val": PADDING_VALUE,
+        "dropout": dropout
+    }
+    trunc_model_args = {"embed_dim": out_c,
+                        "cross_attn_layers": 1, "num_heads": 4, "dropout": dropout, "padding_value": PADDING_VALUE}
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_geo_from_pc_test"
+    args_all = {"branch_args": geo_encoder_model_args,
+                "trunk_args": trunc_model_args, "filebase": NTO_filebase}
+    return args_all
+
+# =============================================================================
+# %%

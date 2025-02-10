@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 
 
 def download_data(data_path):
+    # Download data from google drive:
+    # https://drive.google.com/drive/folders/1f9i6eOHfjULfVbd2FbUHHjqcL6CPJxbb
     file_id = ["1I-fO-RsFvD3nqBuFrg67R0yqTFdD_gpA",
                "18MsdeVVrmQacARYzWg8mXqEOFBTrhCVd", "1Ia5izgUum-IQLdO6PW70HO8AdAqA_IVb", "1Pjliqhxegoe5VpoLrpBa9n3P4gX9MfTt"
                ]  # Extract from the shared URL

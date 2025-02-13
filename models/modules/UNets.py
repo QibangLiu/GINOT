@@ -327,7 +327,9 @@ class ResidualBlockConvTimeStep(nn.Module):
         self.label_emb = nn.Sequential(
             activation_fn, nn.Linear(label_emb_dim, channel_out)
         )
-
+        self.conv_concat = nn.Conv2d(
+            3*channel_out, channel_out, kernel_size=3, padding="same"
+        )
         lay_list2 = [norm_layer(channel_out, groups), activation_fn]
         if dropout is not None and dropout > 0:
             lay_list2.append(nn.Dropout(dropout))
@@ -351,7 +353,10 @@ class ResidualBlockConvTimeStep(nn.Module):
         h = self.conv1(x)
         emb_t = self.time_emb(t)
         emb_c = self.label_emb(c) * mask[:, None]
-        h += emb_t[:, :, None, None] + emb_c[:, :, None, None]
+        # h += emb_t[:, :, None, None] + emb_c[:, :, None, None]
+        h = self.conv_concat(
+            torch.cat([h, emb_t[:, :, None, None].repeat(1, 1, h.shape[2], h.shape[3]),
+                       emb_c[:, :, None, None].repeat(1, 1, h.shape[2], h.shape[3])], dim=1))
         h = self.conv2(h)
 
         return h + self.shortcut(x)

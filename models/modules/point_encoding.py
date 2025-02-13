@@ -122,7 +122,6 @@ class PointSetEmbedding(nn.Module):
         xyz = xyz.permute(0, 2, 1)
         if points is not None:
             points = points.permute(0, 2, 1)
-
         if self.group_all:
             # QB: 2025-01-24
             # we can not use group_all here, since some points are padding points

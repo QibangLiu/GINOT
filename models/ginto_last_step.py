@@ -104,7 +104,7 @@ class Branch(nn.Module):
             grid_points: grid points (Nx*Ny,2) Nx=Ny=120
         """
         # (B, N, 2)->(B,latent_dim,out_c)
-        latent = self.geo_encoder(pc)
+        latent = self.geo_encoder(pc, apply_padding_pointnet2=True)
         normalized_sdf = self.sdf_NN(grid_points, latent)  # (B, N)
         normalized_sdf = normalized_sdf.view(-1, 1, 120, 120)
         x = self.forward_from_sdf(normalized_sdf)

@@ -2,15 +2,20 @@
 """
 Instructions:
 -- Download the required data and place them in ../../data/GEJetEngineBracket/:
-    VolumeMesh and FieldMesh can be downloaded from the following link:
+    VolumeMesh, FieldMesh and BRep can be downloaded from the following link:
     https://drive.google.com/drive/u/0/folders/10ccsas7TfD7nIan-Ll5y9vbx4-tSqEyJ
 -- Important Notes:
-** Do not use the SurfaceMesh.
+** Do not use the FieldMesh for mesh.
     The point, cell, and face data in the FieldMesh should not be used.
     As of February 8, 2025, there is a mismatch between the corresponding nodes in cells and fields due to the removal of the 5 loading points.
+    They may correct this issue in the future, but for now, the FieldMesh should not be used.
 ** Recommended Approach:
+    Run data_process_brep.py first, to extract The point cloud of surface from the BRep files (*.step) in the BRep folder, using freecad
+    which has smaller size than the surface mesh extracted from the VTK files.
+
     Use the VTK files in the VolumeMesh folder and the nodal variables from the FieldMesh.
     These two datasets are matched and should be used together.
+
 ** Mesh Information:
     The meshes consist of 10-node tetrahedral elements,
     but this script will converte the mesh and data to 4-node tetrahedral elements to reduce the number of nodes.
@@ -29,6 +34,7 @@ from collections import Counter
 import natsort
 import h5py
 import pickle
+import gmsh
 pv.set_jupyter_backend('html')
 # pv.set_jupyter_backend('client')
 # pv.global_theme.trame.server_proxy_enabled = False
@@ -38,6 +44,7 @@ SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 data_path = f"{SCRIPT_PATH}/../../data/GEJetEngineBracket/"
 field_mesh_path = f"{data_path}/FieldMesh/"
 volume_mesh_path = f"{data_path}/VolumeMesh/"
+brep_path = f"{data_path}/BRep/"
 # %%
 nodal_variable_name = "ver_stress(MPa)"
 """nodal_var:
@@ -58,6 +65,7 @@ field_mesh_files = [os.path.join(field_mesh_path, id+".h5")
                     for id in sample_ids]
 volume_mesh_files = [os.path.join(
     volume_mesh_path, id+".vtk") for id in sample_ids]
+brep_files = [os.path.join(brep_path, id+".step") for id in sample_ids]
 # %%
 # Check if all files exist
 missing_files = []
@@ -73,6 +81,28 @@ if missing_files:
     print(file)
 else:
   print("All files exist.")
+
+
+def gmsh_extract_surface_points(index):
+    # has issues for some *.step files
+    file = brep_files[index]
+    gmsh.initialize()
+    gmsh.open(file)
+    model = gmsh.model
+    model_geo = model.geo
+
+    model_geo.synchronize()
+    entities = model.getEntities(0)
+
+    points = []
+    for entity in entities:
+        points.append(model.getValue(0, entity[1], []))
+
+    points = np.array(points)
+    gmsh.finalize()
+    return points
+
+
 
 
 def extract_data(index):
@@ -110,16 +140,15 @@ def extract_data(index):
     corrected_cells = np.array(corrected_cells)
     # new_celltypes = np.full(len(corrected_cells), pv.CellType.TETRA)
     new_nodal_variable = nodal_variable[used_points]
-    new_celltypes = np.full(len(corrected_cells), pv.CellType.TETRA)
-    new_mesh = pv.UnstructuredGrid(corrected_cells, new_celltypes, new_points)
-    surface_mesh = new_mesh.extract_surface()
-    surface_points = surface_mesh.points
-    return new_points, corrected_cells, new_nodal_variable, surface_points
-# %%
+    # new_celltypes = np.full(len(corrected_cells), pv.CellType.TETRA)
+    # new_mesh = pv.UnstructuredGrid(corrected_cells, new_celltypes, new_points)
+    # surface_mesh = new_mesh.extract_surface()
+    # surface_points = surface_mesh.points
+    # surface_points = extract_surface_points(index)
+    return new_points, corrected_cells, new_nodal_variable
 
-
-new_points, corrected_cells, new_nodal_variable, surface_points = extract_data(
-    2)
+# new_points, corrected_cells, new_nodal_variable = extract_data(
+#     2)
 # %%
 
 
@@ -142,14 +171,17 @@ vertices_all = []
 cells_all = []
 nodal_stress_all = []
 points_cloud_all = []
+points_cloud_dic = np.load(f"{data_path}points_cloud_dict.npz")
 for idx in range(len(sample_ids)):
     print(f"========Processing {idx}: {sample_ids[idx]}=============")
-    points, cells, nodal_variable, surface_points = extract_data(
+    points, cells, nodal_variable = extract_data(
         idx)
-    vertices_all.append(new_points)
-    cells_all.append(corrected_cells)
-    nodal_stress_all.append(new_nodal_variable)
-    points_cloud_all.append(surface_points)
+    points = points.view(np.ndarray)
+    surface_points = points_cloud_dic[sample_ids[idx]]
+    vertices_all.append(points.astype(np.float32))
+    cells_all.append(cells)
+    nodal_stress_all.append(nodal_variable.astype(np.float32))
+    points_cloud_all.append(surface_points.astype(np.float32))
 # %%
 data = {"vertices": vertices_all, "cells": cells_all,
         "nodal_stress": nodal_stress_all, "points_cloud": points_cloud_all}

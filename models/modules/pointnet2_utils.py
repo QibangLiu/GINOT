@@ -130,7 +130,9 @@ def farthest_point_sample(xyz, npoint, pc_padding_value: Optional[float] = None,
     return centroids
 
 
-def query_ball_point(radius, nsample, xyz, new_xyz, pc_padding_value: Optional[float] = None):
+def query_ball_point(radius, nsample, xyz, new_xyz,
+                     pc_padding_value: Optional[float] = None,
+                     chunk_size: int = 256):
     """
     Input:
         radius: local region radius
@@ -143,7 +145,8 @@ def query_ball_point(radius, nsample, xyz, new_xyz, pc_padding_value: Optional[f
     device = xyz.device
     B, N, C = xyz.shape
     _, S, _ = new_xyz.shape
-    group_idx = torch.arange(N, dtype=torch.long).to(
+    # use int32 to save memory, but need to convert to then.
+    group_idx = torch.arange(N, dtype=torch.int32).to(
         device).view(1, 1, N).repeat([B, S, 1])  # [B, S, N]
     sqrdists = square_distance(new_xyz, xyz)  # [B, S, N]
     group_idx[sqrdists > radius**2] = N  # [B, S, N]
@@ -153,13 +156,23 @@ def query_ball_point(radius, nsample, xyz, new_xyz, pc_padding_value: Optional[f
         pad_mask = xyz[:, :, 0] == pc_padding_value  # [B, N]
         pad_mask = pad_mask[:, None, :].repeat([1, S, 1])  # [B, S, N]
         group_idx[pad_mask] = N
-    group_idx = group_idx.sort(dim=-1)[0][:, :, :nsample]  # [B, S, nsample]
+    if N > 10000:
+        # chunk the sort to avoid OOM
+        sorted_parts = [
+            group_idx[:, i: i + chunk_size, :].sort(dim=-1)[0]
+            for i in range(0, S, chunk_size)
+        ]
+        group_idx = torch.cat(sorted_parts, dim=1)
+    else:
+        group_idx, _ = group_idx.sort(dim=-1)  # [B, S, N]
+
+    group_idx = group_idx[:, :, :nsample]  # [B, S, nsample]
     group_first = group_idx[:, :, 0].view(B, S, 1).repeat(
         [1, 1, nsample])  # [B, S, nsample], all first index
     mask = group_idx == N
     # if not enough samples, use the first one
     group_idx[mask] = group_first[mask]
-    return group_idx
+    return group_idx.to(torch.long)
 
 
 def sample_and_group(
@@ -191,10 +204,10 @@ def sample_and_group(
             xyz, npoint, pc_padding_value, deterministic=deterministic)  # [B, npoint, C]
     elif fps_method == "first":
         if pc_padding_value is None:
-            fps_idx = torch.arange(npoint)[None].repeat(B, 1)
+            fps_idx = torch.arange(npoint)[None].repeat(B, 1).to(xyz.device)
         else:
             # QB: if padding_value and the points is shuffled
-            fps_idx = torch.arange(N).repeat(B, 1)
+            fps_idx = torch.arange(N).repeat(B, 1).to(xyz.device)
             mask = xyz[:, :, 0] != pc_padding_value
             # large_neg = torch.full_like(xyz[:, :, 0], float('inf'))
             fps_idx = torch.where(mask, fps_idx, float('inf'))

@@ -46,7 +46,7 @@ class Branch(nn.Module):
             grid_points: grid points (Nx*Ny,2) Nx=Ny=120
         """
         # (B, N, 2)->(B,latent_dim,out_c)
-        x = self.geo_encoder(pc)
+        x = self.geo_encoder(pc, apply_padding_pointnet2=True)
 
         return x
 
@@ -92,20 +92,9 @@ class Trunk(nn.Module):
                                          nn.Dropout(dropout),
                                          nn.Linear(2*embed_dim, out_channels)
                                          )
-        self.step = 0
 
     def forward(self, xyt, pc):
-        self.step += 1
-        print(f"Step {self.step}, training{self.training}")
-        print(
-            f"Allocated memory: {torch.cuda.memory_allocated(device) / 1024**3:.2f} GB")
-        print(
-            f"Cached memory: {torch.cuda.memory_reserved(device) / 1024**3:.2f} GB")
         latent = self.branch(pc)  # (B, latenc, embed_dim)
-        print(
-            f"Allocated memory: {torch.cuda.memory_allocated(device) / 1024**3:.2f} GB")
-        print(
-            f"Cached memory: {torch.cuda.memory_reserved(device) / 1024**3:.2f} GB")
         # (B,N,ndim)->(B,N,embed_dim)
         xyt = encode_position('nerf', position=xyt)
         x = self.Q_encoder(xyt)
@@ -164,11 +153,10 @@ def EvaluateForwardModel(trainer, test_loader, train_loader):
         f"Mean L2 error for training data: {np.mean(error_s)}, std: {np.std(error_s)}")
 
 
-def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3):
+def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, window_size=5000):
 
-    train_dataset, test_dataset, cells_train, cells_test, s_inverse, pc_inverse, vert_inverse = configs.LoadDataGEJEBGeo()
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+    train_loader, test_loader, cells_test, s_inverse, pc_inverse, vert_inverse = configs.LoadDataGEJEBGeo(
+        bs_train=32, bs_test=64)
 
     class TRAINER(torch_trainer.TorchTrainer):
         def __init__(self, models, device, filebase):
@@ -220,7 +208,7 @@ def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3):
         lr_scheduler=lr_scheduler,
         checkpoint=checkpoint,
         scheduler_metric_name="val_loss",
-        window_size=600,
+        window_size=window_size,
         sequence_idx=[1, 2],
     )
     if train_flag == "continue":
@@ -240,8 +228,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--train_flag", type=str, default="start")
-    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--window_size", type=int, default=5000)
     args, unknown = parser.parse_known_args()
     print(vars(args))
 
@@ -255,7 +244,8 @@ if __name__ == "__main__":
     NTO_model = NTOModelDefinition(branch_args, trunk_args)
 
     trainer = TrainNTOModel(NTO_model, filebase, args.train_flag,
-                            epochs=args.epochs, lr=args.learning_rate)
+                            epochs=args.epochs, lr=args.learning_rate,
+                            window_size=args.window_size)
     print(filebase, " training finished")
 
 # %%

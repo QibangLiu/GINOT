@@ -113,11 +113,16 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         Returns:
             torch.Tensor: [B, out_c*latent_d]
         """
+        # set padding for point set embedding
         if apply_padding_pointnet2 or self.fps_method == "fps":
+            # for fps, if padded, must set the padding value for pointnet2
             pc_padding_val_pointnet2 = self.pc_padding_val
         else:
+            # for first methods, it depends on the padding value of the input points
+            # if the padding value is much larger than radius, it is safe to set it to None
             pc_padding_val_pointnet2 = None
 
+        # set padding for cross-attention
         if self.pc_padding_val is not None:
             pading_mask = points[:, :, 0] == self.pc_padding_val  # [B, N]
             pading_mask = pading_mask.to(points.device)
@@ -133,8 +138,16 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         #      \ pointNet             /\ mean (dim=2)
         #      _\/ permute           / Conv, C3=d_hidden[-1]
         #       [B, C2+ndim,  n_sample, n_point]
+        # print(
+        #     f"Allocated memory: {torch.cuda.memory_allocated(device) / 1024**3:.2f} GB")
+        # print(
+        #     f"Cached memory: {torch.cuda.memory_reserved(device) / 1024**3:.2f} GB")
         data_tokens = self.point_set_embedding(
             xyz, points, pc_padding_val_pointnet2)
+        # print(
+        #     f"Allocated memory: {torch.cuda.memory_allocated(device) / 1024**3:.2f} GB")
+        # print(
+        #     f"Cached memory: {torch.cuda.memory_reserved(device) / 1024**3:.2f} GB")
         # [B, Co, No] -> [B, No, Co]
         data_tokens = data_tokens.permute(0, 2, 1)
         batch_size = points.shape[0]
@@ -147,7 +160,7 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         # [B, n_point+latent_d, width] -> [B,  n_point+latent_d, width]
         # cross_attn. TODO: add mask here, dataset_emb has padding points
         h = self.encoder(h, dataset_emb, key_padding_mask=pading_mask)
-        # self_attn TODO: No need mask here, because no pading point
+        # [B,  n_point+latent_d, width]-> [B,  n_point+latent_d, width]
         h = self.processor(h)
         # [B,  n_point+latent_d, width] -> [B, latent_d, width]
         # -> [B, latent_d, out_c]

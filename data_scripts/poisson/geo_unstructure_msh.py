@@ -93,7 +93,7 @@ def run_sim():
     u_solution = problem.solve()
     gmsh.finalize()
     pyvista_cells, cell_types, nodes = vtk_mesh(V)
-    return pyvista_cells, cell_types, nodes, u_solution.x.array, xy_bound
+    return pyvista_cells, cell_types, nodes, u_solution.x.array, xy_bound, r
 # %%
 # visualize
 
@@ -127,7 +127,7 @@ def plot_trimesh(nodes, pyvista_cells, u_solution):
 
 
 def test():
-    pyvista_cells, cell_types, nodes, u_solution, xy_bound = run_sim()
+    pyvista_cells, cell_types, nodes, u_solution, xy_bound, _ = run_sim()
     plot_pyvista(pyvista_cells, cell_types, nodes, u_solution)
 
 
@@ -138,10 +138,11 @@ def run_all():
     nodes_all = []
     solutions_all = []
     point_clouds_all = []
+    radus_all = []
     start_time = time.time()
     while len(cells_all) < 6001:
         try:
-            pyvista_cells, cell_types, nodes, u_solution, xy_bound = run_sim()
+            pyvista_cells, cell_types, nodes, u_solution, xy_bound, r = run_sim()
         except:
             print("failed")
             continue
@@ -150,14 +151,18 @@ def run_all():
         nodes_all.append(nodes.astype(np.float32))
         solutions_all.append(u_solution.astype(np.float32))
         point_clouds_all.append(xy_bound.astype(np.float32))
+        radus_all.append(r.astype(np.float32))
         print(
             f"got {len(cells_all)} samples, took {time.time()-start_time} seconds")
 
     data_all = {'cells': cells_all, 'celltypes': celltypes_all, 'nodes': nodes_all,
-                'solutions': solutions_all, 'point_clouds': point_clouds_all}
+                'solutions': solutions_all, 'point_clouds': point_clouds_all, 'radius': radus_all}
     filebase = "../../data/poisson/"
 
     os.makedirs(filebase, exist_ok=True)
     with open(filebase+'poisson_geo.pkl', 'wb') as f:
         pickle.dump(data_all, f)
     # return data_all
+
+
+run_all()

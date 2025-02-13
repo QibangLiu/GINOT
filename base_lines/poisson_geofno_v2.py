@@ -1,4 +1,6 @@
 # %%
+from torch.nn.utils.rnn import pad_sequence
+import pickle
 from sklearn.model_selection import train_test_split
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
@@ -212,8 +214,8 @@ class FNO2d(nn.Module):
         self.fc2 = nn.Linear(128, out_channels)
 
     def forward(self, u, code=None, x_in=None, x_out=None, iphi=None):
-        # u (batch, Nx, d) the input value
-        # code (batch, Nx, d) the input features
+        # u (batch, Nx, d) the input value, the mesh points for this example
+        # code (batch, Nx, d) the input features, the raduis for this example
         # x_in (batch, Nx, 2) the input mesh (sampling mesh)
         # xi (batch, xi1, xi2, 2) the computational mesh (uniform)
         # x_in (batch, Nx, 2) the input mesh (query mesh)
@@ -280,7 +282,7 @@ class IPHI(nn.Module):
         """
         self.width = width
         self.fc0 = nn.Linear(4, self.width)
-        self.fc_code = nn.Linear(42, self.width)
+        self.fc_code = nn.Linear(145, self.width)
         self.fc_no_code = nn.Linear(3*self.width, 4*self.width)
         self.fc1 = nn.Linear(4*self.width, 4*self.width)
         self.fc2 = nn.Linear(4*self.width, 4*self.width)
@@ -327,15 +329,12 @@ class IPHI(nn.Module):
 ################################################################
 # configs
 ################################################################
-Ntotal = 2000
-ntrain = 1000
-ntest = 200
 
-batch_size = 20
+# batch_size = 20
 learning_rate_fno = 0.001
 learning_rate_iphi = 0.0001
 
-epochs = 201
+epochs = 501
 
 modes = 12
 width = 32
@@ -347,29 +346,40 @@ PATH_Sigma = '../data/elasticity/Random_UnitCell_sigma_10.npy'
 PATH_XY = '../data/elasticity/Random_UnitCell_XY_10.npy'
 PATH_rr = '../data/elasticity/Random_UnitCell_rr_10.npy'
 
-input_rr = np.load(PATH_rr)
-input_rr = torch.tensor(input_rr, dtype=torch.float).permute(1, 0)
-input_s = np.load(PATH_Sigma)
-input_s = torch.tensor(input_s, dtype=torch.float).permute(1, 0).unsqueeze(-1)
-input_xy = np.load(PATH_XY)
-input_xy = torch.tensor(input_xy, dtype=torch.float).permute(2, 0, 1)
-
-train_rr = input_rr[:ntrain]
-test_rr = input_rr[-ntest:]
-train_s = input_s[:ntrain]
-test_s = input_s[-ntest:]
-train_xy = input_xy[:ntrain]
-test_xy = input_xy[-ntest:]
-# train_rr, test_rr, train_s, test_s, train_xy, test_xy = train_test_split(
-#     input_rr, input_s, input_xy, test_size=0.2, random_state=42)
-# ntest = test_rr.shape[0]
-# ntrain = train_rr.shape[0]
+input_rr = np.load(PATH_rr)  # radius (Nr, B)
+input_rr = torch.tensor(input_rr, dtype=torch.float).permute(1, 0)  # (B,Nr)
+input_s = np.load(PATH_Sigma)  # (N,B)
+input_s = torch.tensor(input_s, dtype=torch.float).permute(
+    1, 0).unsqueeze(-1)  # (B,N,1)
+input_xy = np.load(PATH_XY)  # (N,2,B)
+input_xy = torch.tensor(
+    input_xy, dtype=torch.float).permute(2, 0, 1)  # (B,N,2)
+# %%
+data_file = '../data/poisson/poisson_geo.pkl'
+with open(data_file, "rb") as f:
+    data = pickle.load(f)
+PADDING_VALUE = -10
+input_rr = data["radius"]
+input_rr = torch.tensor(np.array(input_rr))  # (B,Nr)
+nodes_all = data['nodes']
+input_xy = [torch.tensor(n[:, :2]) for n in nodes_all]
+input_xy = pad_sequence(input_xy, batch_first=True,
+                        padding_value=PADDING_VALUE)  # (B,N,2)
+solutions_all = data['solutions']
+solutions = [torch.tensor(s) for s in solutions_all]
+input_s = pad_sequence(solutions, batch_first=True,
+                       padding_value=PADDING_VALUE)[:, :, None]  # (B,N,1)
+# %%
+train_rr, test_rr, train_s, test_s, train_xy, test_xy = train_test_split(
+    input_rr, input_s, input_xy, test_size=0.2, random_state=42)
+ntest = test_rr.shape[0]
+ntrain = train_rr.shape[0]
 print(train_rr.shape, train_s.shape, train_xy.shape)
 
 train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(
-    train_rr, train_s, train_xy), batch_size=batch_size, shuffle=True)
+    train_rr, train_s, train_xy), batch_size=64, shuffle=True)
 test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(
-    test_rr, test_s, test_xy), batch_size=batch_size, shuffle=False)
+    test_rr, test_s, test_xy), batch_size=512, shuffle=False)
 
 ################################################################
 # training and evaluation
@@ -389,6 +399,8 @@ scheduler_iphi = torch.optim.lr_scheduler.CosineAnnealingLR(
 
 myloss = LpLoss(size_average=False)
 N_sample = 1000
+training_loss = []
+testing_loss = []
 for ep in range(epochs):
     model.train()
     t1 = default_timer()
@@ -396,11 +408,14 @@ for ep in range(epochs):
     train_reg = 0
     for rr, sigma, mesh in train_loader:
         rr, sigma, mesh = rr.cuda(), sigma.cuda(), mesh.cuda()
-
+        batch_size = sigma.shape[0]
+        mask = sigma != PADDING_VALUE
+        mask = mask.float()
         optimizer_fno.zero_grad()
         optimizer_iphi.zero_grad()
         out = model(mesh, code=rr, iphi=model_iphi)
-
+        sigma = sigma*mask
+        out = out*mask
         loss = myloss(out.view(batch_size, -1), sigma.view(batch_size, -1))
         loss.backward()
 
@@ -416,7 +431,12 @@ for ep in range(epochs):
     with torch.no_grad():
         for rr, sigma, mesh in test_loader:
             rr, sigma, mesh = rr.cuda(), sigma.cuda(), mesh.cuda()
+            batch_size = sigma.shape[0]
+            mask = sigma != PADDING_VALUE
+            mask = mask.float()
             out = model(mesh, code=rr, iphi=model_iphi)
+            sigma = sigma*mask.float()
+            out = out*mask.float()
             test_l2 += myloss(out.view(batch_size, -1),
                               sigma.view(batch_size, -1)).item()
 
@@ -425,7 +445,8 @@ for ep in range(epochs):
 
     t2 = default_timer()
     print(ep, t2 - t1, train_l2, test_l2)
-
+    training_loss.append(train_l2)
+    testing_loss.append(test_l2)
     if ep % 100 == 0:
         # torch.save(model, '../model/elas_v2_'+str(ep))
         # torch.save(model_iphi, '../model/elas_v2_iphi_'+str(ep))
@@ -443,3 +464,34 @@ for ep in range(epochs):
                       pred, edgecolor='w', lw=0.1, **lims)
         fig.show()
         # plt.savefig('output.png')
+# %%
+plt.plot(training_loss, label='train')
+plt.plot(testing_loss, label='test')
+plt.legend()
+plt.xlabel('epoch')
+plt.ylabel('L2 loss')
+# %%
+# double check if it works for various padding values
+for rr, sigma, mesh in test_loader:
+    rr, sigma, mesh = rr.cuda(), sigma.cuda(), mesh.cuda()
+    break
+batch_size = sigma.shape[0]
+mask = sigma != PADDING_VALUE
+mask = mask.float()
+out = model(mesh, code=rr, iphi=model_iphi)
+sigma = sigma*mask
+out = out*mask
+test_l2 = myloss(out.view(batch_size, -1),
+                 sigma.view(batch_size, -1)).item()
+test_l2 = test_l2/batch_size
+# change the padding value of mesh
+mask_mesh = mesh == PADDING_VALUE
+mesh[mask_mesh] = -100
+out = model(mesh, code=rr, iphi=model_iphi)
+test_l2_ = myloss(out.view(batch_size, -1),
+                  sigma.view(batch_size, -1)).item()
+test_l2_ = test_l2_/batch_size
+print("test L2 for padding value -100: ", test_l2_)
+print("test L2 for padding value -10: ", test_l2)
+
+# %%

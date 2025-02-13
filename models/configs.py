@@ -4,12 +4,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.data import TensorDataset, DataLoader, Dataset
 import os
 import pickle
 from sklearn.model_selection import train_test_split
-
-
+from typing import Union
+import time
+# %%
+# Total memory allocated by tensors (in bytes)
+# print(f"Allocated memory: {torch.cuda.memory_allocated('cuda') / 1024**3:.2f} GB")
+#     # Total memory reserved by PyTorch's caching allocator (in bytes)
+# print(f"Reserved memory: {torch.cuda.memory_reserved('cuda') / 1024**3:.2f} GB")
 # %%
 
 SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
@@ -20,6 +25,29 @@ DATA_FILE = f"{DATA_FILEBASE}/node_pc_mises_disp_laststep_aug.pkl"
 
 PADDING_VALUE = -10
 NUM_POINT_POINTNET2 = 128
+
+# %%
+
+
+class ListDataset(Dataset):
+    """for list of tensors"""
+
+    def __init__(self, data: Union[list, tuple]):
+        """
+        args:
+            data: list of data, each element is a list of tensors
+            e.g. [(pc1, xyt1, S1), (pc2, xyt2, S2), ...]
+
+        """
+        self.data = data
+
+    def __len__(self):
+        return len(self.data[0])
+
+    def __getitem__(self, idx):
+        one_data = [d[idx] for d in self.data]
+        return one_data
+# %%
 
 
 def LoadData(data_file=DATA_FILE, test_size=0.2, seed=42):
@@ -315,7 +343,9 @@ def shape_car_geo_from_pc_configs():
 # =============================================================================
 # %%
 # ========================GE Jet Engine Bracket================================
-def LoadDataGEJEBGeo(test_size=0.2, seed=42):
+def LoadDataGEJEBGeo(bs_train=32, bs_test=256, test_size=0.2, seed=42, padding_value=PADDING_VALUE):
+    start = time.time()
+    # load data
     data_file = f"{DATA_FILEBASE}/GEJetEngineBracket/GE-JEB.pkl"
     with open(data_file, "rb") as f:
         data = pickle.load(f)
@@ -323,15 +353,18 @@ def LoadDataGEJEBGeo(test_size=0.2, seed=42):
     cells = data['cells']
     nodal_stress = data['nodal_stress']
     points_cloud = data['points_cloud']
+    # normalize data
     vert_concat = np.concatenate(vertices, axis=0, dtype=np.float32)
     vert_shift, vert_scale = np.mean(
         vert_concat, axis=0), np.std(vert_concat, axis=0)
     vert_shift = vert_shift[None, :]
     vert_scale = vert_scale[None, :]
+
     pc_concat = np.concatenate(points_cloud, axis=0, dtype=np.float32)
     pc_shift, pc_scale = np.mean(pc_concat, axis=0), np.std(pc_concat, axis=0)
     pc_shift = pc_shift[None, :]
     pc_scale = pc_scale[None, :]
+
     sigma_concat = np.concatenate(nodal_stress, axis=0, dtype=np.float32)
     sigma_shift, sigma_scale = np.mean(
         sigma_concat), np.std(sigma_concat)
@@ -346,21 +379,40 @@ def LoadDataGEJEBGeo(test_size=0.2, seed=42):
     pc_scale = torch.tensor(pc_scale)[None, :]
     vert_shift = torch.tensor(vert_shift)[None, :]
     vert_scale = torch.tensor(vert_scale)[None, :]
-
-    S = pad_sequence(sigma_norm, batch_first=True,
-                     padding_value=PADDING_VALUE)
-    points_cloud = pad_sequence(
-        pc_norm, batch_first=True, padding_value=PADDING_VALUE)
-    vertices = pad_sequence(vertices_norm, batch_first=True,
-                            padding_value=PADDING_VALUE)
-    train_pc, test_pc, train_xyt, test_xyt, train_u, test_u, train_ids, test_ids = train_test_split(
-        points_cloud, vertices, S, np.arange(len(cells)), test_size=test_size, random_state=seed)
-    train_dataset = TensorDataset(
-        train_pc, train_xyt, train_u)
-    test_dataset = TensorDataset(test_pc, test_xyt, test_u)
+    # split test and train data
+    train_ids, test_ids = train_test_split(
+        np.arange(len(cells)), test_size=test_size, random_state=seed)
+    train_pc = [pc_norm[i] for i in train_ids]
+    test_pc = [pc_norm[i] for i in test_ids]
+    train_xyt = [vertices_norm[i] for i in train_ids]
+    test_xyt = [vertices_norm[i] for i in test_ids]
+    train_S = [sigma_norm[i] for i in train_ids]
+    test_S = [sigma_norm[i] for i in test_ids]
     cells_test = [cells[i] for i in test_ids]
     cells_train = [cells[i] for i in train_ids]
+    train_dataset = ListDataset((train_pc, train_xyt, train_S))
+    test_dataset = ListDataset((test_pc, test_xyt, test_S))
+    # padded dataloader
 
+    def pad_collate_fn(batch):
+        pc_batch = [item[0] for item in batch]  # Extract pc (variable-length)
+        xyt_batch = [item[1]
+                     for item in batch]  # Extract xyt (variable-length)
+        S = [item[2] for item in batch]  # Extract S (variable-length)
+        # y_batch = torch.stack([item[1] for item in batch])  # Extract and stack y (fixed-length)
+        # Pad sequences
+        pc_padded = pad_sequence(
+            pc_batch, batch_first=True, padding_value=padding_value)
+        xyt_padded = pad_sequence(
+            xyt_batch, batch_first=True, padding_value=padding_value)
+        S_padded = pad_sequence(S, batch_first=True,
+                                padding_value=padding_value)
+        return pc_padded, xyt_padded, S_padded
+
+    train_dataloader = DataLoader(train_dataset, batch_size=bs_train, shuffle=True,
+                                  collate_fn=pad_collate_fn)
+    test_dataloader = DataLoader(test_dataset, batch_size=bs_test, shuffle=False,
+                                 collate_fn=pad_collate_fn)
     def SigmaInverse(x):
         return x*sigma_scale+sigma_shift
     s_inverse = SigmaInverse
@@ -376,33 +428,33 @@ def LoadDataGEJEBGeo(test_size=0.2, seed=42):
         vert_shift = vert_shift.to(x.device)
         return x*vert_scale+vert_shift
     vert_inverse = VertInverse
-
-    return train_dataset, test_dataset, cells_train, cells_test, s_inverse, pc_inverse, vert_inverse
+    print(f"Data loading time: {time.time()-start:.2f} s")
+    return train_dataloader, test_dataloader, cells_test, s_inverse, pc_inverse, vert_inverse
 
 
 def JEB_geo_from_pc_configs():
     fps_method = "first"
-    out_c = 16
+    out_c = 32
     dropout = 0
     geo_encoder_model_args = {
         "input_channels": 3,
         "out_c": out_c,
         "latent_d": 32,
-        "width": 16,
+        "width": 32,
         "n_point": 1024,
         "n_sample": 256,
         "radius": 0.5,
-        "d_hidden": [16, 16],
+        "d_hidden": [32, 32],
         "num_heads": 4,
         "cross_attn_layers": 1,
-        "self_attn_layers": 1,
+        "self_attn_layers": 2,
         "d_hidden_sdfnn": [128, 128],
         "fps_method": fps_method,
         "pc_padding_val": PADDING_VALUE,
         "dropout": dropout
     }
     trunc_model_args = {"embed_dim": out_c,
-                        "cross_attn_layers": 1, "num_heads": 4, "dropout": dropout, "padding_value": PADDING_VALUE}
+                        "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
     NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_geo_from_pc_test"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}

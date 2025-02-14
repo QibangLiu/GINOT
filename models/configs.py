@@ -157,32 +157,52 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
 
 
 # %%
-def LoadDataPoissionGeo(test_size=0.2, seed=42):
-    data_file = f"{DATA_FILEBASE}/poisson/poisson_geo.pkl"
-    with open(data_file, "rb") as f:
-        data = pickle.load(f)
-    cells_all = data['cells']
-    cells_all = [c.reshape(-1, 4)[:, 1:] for c in cells_all]
-    nodes_all = data['nodes']
-    solutions_all = data['solutions']
-    point_clouds_all = data['point_clouds']
-    points_cloud = torch.tensor(np.array(point_clouds_all))
-    solutions = [torch.tensor(s) for s in solutions_all]
-    nodes = [torch.tensor(n[:, :2]) for n in nodes_all]
-    solutions = pad_sequence(solutions, batch_first=True,
-                             padding_value=PADDING_VALUE)
-    xyt = pad_sequence(nodes, batch_first=True, padding_value=PADDING_VALUE)
+def LoadDataPoissionGeo(struct=True, test_size=0.2, seed=42):
+    if struct:
+        data_file = f"{DATA_FILEBASE}/poisson/poisson_geo_struc_msh.pkl"
+        with open(data_file, "rb") as f:
+            data = pickle.load(f)
+        cells_all = data['cells']
+        nodes_all = data['nodes']
+        solutions_all = data['solutions']
+        point_clouds_all = data['point_clouds']
+        xyt = torch.tensor(np.array(nodes_all))
+        xyt = xyt[:, :, :2]
+        points_cloud = torch.tensor(np.array(point_clouds_all))
+        solutions = torch.tensor(np.array(solutions_all))
+    else:
+        data_file = f"{DATA_FILEBASE}/poisson/poisson_geo_unstruc_msh.pkl"
+        with open(data_file, "rb") as f:
+            data = pickle.load(f)
+        cells_all = data['cells']
+        nodes_all = data['nodes']
+        solutions_all = data['solutions']
+        point_clouds_all = data['point_clouds']
+        points_cloud = torch.tensor(np.array(point_clouds_all))
+        solutions = [torch.tensor(s) for s in solutions_all]
+        nodes = [torch.tensor(n[:, :2]) for n in nodes_all]
+        solutions = pad_sequence(solutions, batch_first=True,
+                                 padding_value=PADDING_VALUE)
+        xyt = pad_sequence(nodes, batch_first=True,
+                           padding_value=PADDING_VALUE)
+
+
     train_pc, test_pc, train_xyt, test_xyt, train_u, test_u, train_idx, test_idx = train_test_split(
-        points_cloud, xyt, solutions, np.arange(0, len(xyt)), test_size=test_size, random_state=seed)
+        points_cloud, xyt, solutions, torch.arange(0, len(xyt)), test_size=test_size, random_state=seed)
 
     train_dataset = TensorDataset(
-        train_pc, train_xyt, train_u)
-    test_dataset = TensorDataset(test_pc, test_xyt, test_u)
-    test_cells = [cells_all[i] for i in test_idx]
-    return train_dataset, test_dataset, test_cells
+        train_pc, train_xyt, train_u, train_idx)
+    test_dataset = TensorDataset(test_pc, test_xyt, test_u, test_idx)
+
+    return train_dataset, test_dataset, cells_all
 
 
-def poission_geo_from_pc_configs():
+def poission_geo_from_pc_configs(struct=True):
+
+    if struct:
+        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_geo_struct_msh_test1_detert"
+    else:
+        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_geo_unstruct_msh"
 
     fps_method = "fps"
     out_c = 64
@@ -194,15 +214,13 @@ def poission_geo_from_pc_configs():
         "n_sample": 18,
         "radius": 0.2,
         "d_hidden": [128, 128],
-        "num_heads": 4,
+        "num_heads": 8,
         "cross_attn_layers": 1,
         "self_attn_layers": 3,
-        "d_hidden_sdfnn": [128, 128],
         "fps_method": fps_method,
     }
-    trunc_model_args = {"embed_dim": out_c,
+    trunc_model_args = {"embed_dim": out_c, "num_heads": 8,
                         "cross_attn_layers": 4, "padding_value": PADDING_VALUE}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_geo_frompc_test"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
@@ -259,7 +277,6 @@ def elasticity_geo_from_pc_configs():
         "num_heads": 4,
         "cross_attn_layers": 1,
         "self_attn_layers": 2,
-        "d_hidden_sdfnn": [128, 128],
         "fps_method": fps_method,
     }
     trunc_model_args = {"embed_dim": out_c,
@@ -328,7 +345,6 @@ def shape_car_geo_from_pc_configs():
         "num_heads": 4,
         "cross_attn_layers": 1,
         "self_attn_layers": 2,
-        "d_hidden_sdfnn": [128, 128],
         "fps_method": fps_method,
         "dropout": dropout
     }
@@ -343,7 +359,7 @@ def shape_car_geo_from_pc_configs():
 # =============================================================================
 # %%
 # ========================GE Jet Engine Bracket================================
-def LoadDataGEJEBGeo(bs_train=32, bs_test=256, test_size=0.2, seed=42, padding_value=PADDING_VALUE):
+def LoadDataGEJEBGeo(bs_train=32, bs_test=128, test_size=0.1, seed=42, padding_value=PADDING_VALUE):
     start = time.time()
     # load data
     data_file = f"{DATA_FILEBASE}/GEJetEngineBracket/GE-JEB.pkl"
@@ -388,10 +404,12 @@ def LoadDataGEJEBGeo(bs_train=32, bs_test=256, test_size=0.2, seed=42, padding_v
     test_xyt = [vertices_norm[i] for i in test_ids]
     train_S = [sigma_norm[i] for i in train_ids]
     test_S = [sigma_norm[i] for i in test_ids]
-    cells_test = [cells[i] for i in test_ids]
-    cells_train = [cells[i] for i in train_ids]
-    train_dataset = ListDataset((train_pc, train_xyt, train_S))
-    test_dataset = ListDataset((test_pc, test_xyt, test_S))
+    # cells_test = [cells[i] for i in test_ids]
+    # cells_train = [cells[i] for i in train_ids]
+    train_dataset = ListDataset(
+        (train_pc, train_xyt, train_S, torch.tensor(train_ids)))
+    test_dataset = ListDataset(
+        (test_pc, test_xyt, test_S, torch.tensor(test_ids)))
     # padded dataloader
 
     def pad_collate_fn(batch):
@@ -399,6 +417,7 @@ def LoadDataGEJEBGeo(bs_train=32, bs_test=256, test_size=0.2, seed=42, padding_v
         xyt_batch = [item[1]
                      for item in batch]  # Extract xyt (variable-length)
         S = [item[2] for item in batch]  # Extract S (variable-length)
+        sample_ids = torch.stack([item[3] for item in batch])
         # y_batch = torch.stack([item[1] for item in batch])  # Extract and stack y (fixed-length)
         # Pad sequences
         pc_padded = pad_sequence(
@@ -407,7 +426,7 @@ def LoadDataGEJEBGeo(bs_train=32, bs_test=256, test_size=0.2, seed=42, padding_v
             xyt_batch, batch_first=True, padding_value=padding_value)
         S_padded = pad_sequence(S, batch_first=True,
                                 padding_value=padding_value)
-        return pc_padded, xyt_padded, S_padded
+        return pc_padded, xyt_padded, S_padded, sample_ids
 
     train_dataloader = DataLoader(train_dataset, batch_size=bs_train, shuffle=True,
                                   collate_fn=pad_collate_fn)
@@ -429,33 +448,32 @@ def LoadDataGEJEBGeo(bs_train=32, bs_test=256, test_size=0.2, seed=42, padding_v
         return x*vert_scale+vert_shift
     vert_inverse = VertInverse
     print(f"Data loading time: {time.time()-start:.2f} s")
-    return train_dataloader, test_dataloader, cells_test, s_inverse, pc_inverse, vert_inverse
+    return train_dataloader, test_dataloader, cells, s_inverse, pc_inverse, vert_inverse
 
 
 def JEB_geo_from_pc_configs():
-    fps_method = "first"
-    out_c = 32
+    fps_method = "fps"
+    out_c = 128
     dropout = 0
     geo_encoder_model_args = {
         "input_channels": 3,
         "out_c": out_c,
-        "latent_d": 32,
-        "width": 32,
-        "n_point": 1024,
-        "n_sample": 256,
+        "latent_d": 256,
+        "width": 128,
+        "n_point": 512,
+        "n_sample": 64,
         "radius": 0.5,
-        "d_hidden": [32, 32],
-        "num_heads": 4,
+        "d_hidden": [64, 128],
+        "num_heads": 8,
         "cross_attn_layers": 1,
         "self_attn_layers": 2,
-        "d_hidden_sdfnn": [128, 128],
         "fps_method": fps_method,
         "pc_padding_val": PADDING_VALUE,
         "dropout": dropout
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_geo_from_pc_test"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_geo_from_pc_test1_cache"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all

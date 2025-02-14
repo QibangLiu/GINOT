@@ -105,13 +105,13 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         self.output_proj = nn.Linear(
             self.width, self.out_c)
 
-    def forward(self, points, apply_padding_pointnet2=False):
+    def forward(self, points, sample_ids=None, apply_padding_pointnet2=False):
         """
         Args:
             points (torch.Tensor): [B, N, C]
-                   C =2 or 3, or >3 if has other features
+                   C =2 or 3, or >3 if has other features, e.g. rgb color
         Returns:
-            torch.Tensor: [B, out_c*latent_d]
+            torch.Tensor: [B,latent_d, out_c]
         """
         # set padding for point set embedding
         if apply_padding_pointnet2 or self.fps_method == "fps":
@@ -136,18 +136,11 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         points = dataset_emb.permute(0, 2, 1)
         # [B, C2, N] -------------> [B, C3, No], No=n_point
         #      \ pointNet             /\ mean (dim=2)
-        #      _\/ permute           / Conv, C3=d_hidden[-1]
+        #      _\/ permute           / Conv, C3=d_hidden[-1]=width
         #       [B, C2+ndim,  n_sample, n_point]
-        # print(
-        #     f"Allocated memory: {torch.cuda.memory_allocated(device) / 1024**3:.2f} GB")
-        # print(
-        #     f"Cached memory: {torch.cuda.memory_reserved(device) / 1024**3:.2f} GB")
         data_tokens = self.point_set_embedding(
-            xyz, points, pc_padding_val_pointnet2)
-        # print(
-        #     f"Allocated memory: {torch.cuda.memory_allocated(device) / 1024**3:.2f} GB")
-        # print(
-        #     f"Cached memory: {torch.cuda.memory_reserved(device) / 1024**3:.2f} GB")
+            xyz, points, pc_padding_val_pointnet2,
+            sample_ids=sample_ids)
         # [B, Co, No] -> [B, No, Co]
         data_tokens = data_tokens.permute(0, 2, 1)
         batch_size = points.shape[0]
@@ -239,7 +232,6 @@ def GeoEncoderModelDefinition(input_channels=2, out_c=128, latent_d=128,
                               num_heads=4, cross_attn_layers=1,
                               self_attn_layers=3,
                               pc_padding_val: Optional[int] = None,
-                              d_hidden_sdfnn=[128, 128],
                               dropout=0.0):
 
     geo_encoder = PointCloudPerceiverChannelsEncoder(
@@ -249,19 +241,23 @@ def GeoEncoderModelDefinition(input_channels=2, out_c=128, latent_d=128,
         num_heads=num_heads, cross_attn_layers=cross_attn_layers,
         self_attn_layers=self_attn_layers,
         pc_padding_val=pc_padding_val, dropout=dropout)
-    sdf_NN = implicit_sdf(latent_d=latent_d, d_hidden_sdfnn=d_hidden_sdfnn)
     tot_num_params = sum(p.numel() for p in geo_encoder.parameters())
     trainable_params = sum(p.numel()
                            for p in geo_encoder.parameters() if p.requires_grad)
     print(
         f"Total number of parameters of Geo encoder: {tot_num_params}, {trainable_params} of which are trainable")
+    return geo_encoder
+
+
+def ImplicitSDFModelDefinition(latent_d=128, d_hidden_sdfnn=[128, 128]):
+    # latent_d have to be the same as the latent_d of the geo_encoder
+    sdf_NN = implicit_sdf(latent_d=latent_d, d_hidden_sdfnn=d_hidden_sdfnn)
     tot_num_params = sum(p.numel() for p in sdf_NN.parameters())
     trainable_params = sum(p.numel()
                            for p in sdf_NN.parameters() if p.requires_grad)
     print(
         f"Total number of parameters of SDF NN: {tot_num_params}, {trainable_params} of which are trainable")
-    return geo_encoder, sdf_NN
-
+    return sdf_NN
 
 def EvaluateGeoEncoderModel(trainer, test_loader, grid_coor, sdf_inv_scaler):
     sd_pred, sd_true = trainer.predict(test_loader, grid_coor)

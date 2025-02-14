@@ -86,7 +86,7 @@ class Trunk(nn.Module):
 # %%
 
 def NTOModelDefinition(branch_args, trunc_args):
-    geo_encoder, _ = GeoEncoderModelDefinition(**branch_args)
+    geo_encoder = GeoEncoderModelDefinition(**branch_args)
     branch = Branch(geo_encoder)
     trunk = Trunk(branch, **trunc_args)
     tot_num_params = sum(p.numel() for p in trunk.parameters())

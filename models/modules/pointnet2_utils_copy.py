@@ -18,8 +18,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# have to clear before using the cache
-CACHE_SAMPLE_AND_GROUP_INDECIES = {}
 
 def timeit(tag, t):
     print("{}: {}s".format(tag, time() - t))
@@ -174,14 +172,16 @@ def query_ball_point(radius, nsample, xyz, new_xyz,
     mask = group_idx == N
     # if not enough samples, use the first one
     group_idx[mask] = group_first[mask]
-    return group_idx.detach().cpu()
+    return group_idx.to(torch.long)
 
 
-def real_sample_and_group_indices(
+def sample_and_group(
     npoint,
     radius,
     nsample,
     xyz,
+    points,
+    returnfps=False,
     deterministic=False,
     fps_method: str = "first",
     pc_padding_value: Optional[float] = None,
@@ -194,8 +194,8 @@ def real_sample_and_group_indices(
         xyz: input points position data, [B, N, ndim], ndim=3 or 2
         points: input points data, [B, N, D]
     Return:
-        fps_idx: sampled points indices, [B, npoint] long format on device of xyz
-        group_idx: group indices for each sample, [B,nsample, npoint], int32 format on cpu
+        new_xyz: sampled points position data, [B, npoint, nsample, ndim]
+        new_points: sampled points data, [B, npoint, nsample, ndim+D]
     """
     B, N, C = xyz.shape
     S = npoint
@@ -217,91 +217,8 @@ def real_sample_and_group_indices(
         raise ValueError(f"Unknown FPS method: {fps_method}")
     # (B,npoint,C) take out the centroids points at fps_idx
     new_xyz = index_points(xyz, fps_idx)
-    group_idx = query_ball_point(radius, nsample, xyz, new_xyz,
+    idx = query_ball_point(radius, nsample, xyz, new_xyz,
                            pc_padding_value=pc_padding_value)
-
-    return fps_idx, group_idx
-
-
-def sample_and_group_indices(
-    npoint,
-    radius,
-    nsample,
-    xyz,
-    deterministic=False,
-    fps_method: str = "first",
-    pc_padding_value: Optional[float] = None,
-    sample_ids: Optional[torch.Tensor] = None,
-):
-    """
-    Input:
-        npoint:
-        radius:
-        nsample:
-        xyz: input points position data, [B, N, ndim], ndim=3 or 2
-        points: input points data, [B, N, D]
-    Return:
-        fps_idx: sampled points indices, [B, npoint] long format on device of xyz
-        group_idx: group indices for each sample, [B,nsample, npoint], long format on device of xyz
-    """
-    if deterministic:
-        if sample_ids is not None and \
-                all(int(k) in CACHE_SAMPLE_AND_GROUP_INDECIES for k in sample_ids):
-            fps_ids = []
-            group_ids = []
-            for k in sample_ids:
-                fps_i, group_i = CACHE_SAMPLE_AND_GROUP_INDECIES[int(k)]
-                fps_ids.append(fps_i)
-                group_ids.append(group_i)
-
-            return torch.stack(fps_ids), torch.stack(group_ids).to(xyz.device).long()
-        else:
-            fps_ids, group_ids = real_sample_and_group_indices(
-                npoint, radius, nsample, xyz, deterministic, fps_method, pc_padding_value
-            )
-            if sample_ids is not None:
-                for i, k in enumerate(sample_ids):
-                    CACHE_SAMPLE_AND_GROUP_INDECIES[int(k)] = (
-                        fps_ids[i], group_ids[i])
-            return fps_ids, group_ids.to(xyz.device).long()
-    else:
-        fps_ids, group_ids = real_sample_and_group_indices(
-            npoint, radius, nsample, xyz, deterministic, fps_method, pc_padding_value
-        )
-        return fps_ids, group_ids.long().to(xyz.device)
-
-
-def sample_and_group(
-    npoint,
-    radius,
-    nsample,
-    xyz,
-    points,
-    returnfps=False,
-    deterministic=False,
-    fps_method: str = "first",
-    pc_padding_value: Optional[float] = None,
-    sample_ids: Optional[torch.Tensor] = None,
-):
-    """
-    Input:
-        npoint:
-        radius:
-        nsample:
-        xyz: input points position data, [B, N, ndim], ndim=3 or 2
-        points: input points data, [B, N, D]
-    Return:
-        new_xyz: sampled points position data, [B, npoint, nsample, ndim]
-        new_points: sampled points data, [B, npoint, nsample, ndim+D]
-    """
-    B, N, C = xyz.shape
-    S = npoint
-
-    fps_idx, idx = sample_and_group_indices(
-        npoint, radius, nsample, xyz, deterministic, fps_method, pc_padding_value, sample_ids=sample_ids
-    )
-
-    new_xyz = index_points(xyz, fps_idx)
     grouped_xyz = index_points(xyz, idx)  # [B, npoint, nsample, C]
     grouped_xyz_norm = grouped_xyz - new_xyz.view(B, S, 1, C)
 

@@ -39,14 +39,15 @@ class Branch(nn.Module):
         latent_d = geo_encoder.latent_d
         out_c = geo_encoder.out_c
 
-    def forward(self, pc):
+    def forward(self, pc, sample_ids=None):
         """
         Args:
             pc: point cloud (B,N,2)
             grid_points: grid points (Nx*Ny,2) Nx=Ny=120
         """
         # (B, N, 2)->(B,latent_dim,out_c)
-        x = self.geo_encoder(pc, apply_padding_pointnet2=True)
+        x = self.geo_encoder(
+            pc, apply_padding_pointnet2=True, sample_ids=sample_ids,)
 
         return x
 
@@ -64,8 +65,6 @@ class Trunk(nn.Module):
         self.Q_encoder = nn.Sequential(nn.Linear(d*in_channels, 2*embed_dim),
                                        nn.ReLU(),
                                        nn.Linear(2*embed_dim, 3*embed_dim),
-                                       nn.ReLU(),
-                                       nn.Linear(3*embed_dim, 3*embed_dim),
                                        nn.ReLU(),
                                        nn.Linear(3*embed_dim, 3*embed_dim),
                                        nn.ReLU(),
@@ -93,8 +92,9 @@ class Trunk(nn.Module):
                                          nn.Linear(2*embed_dim, out_channels)
                                          )
 
-    def forward(self, xyt, pc):
-        latent = self.branch(pc)  # (B, latenc, embed_dim)
+    def forward(self, xyt, pc, sample_ids=None):
+        # (B, latenc, embed_dim)
+        latent = self.branch(pc, sample_ids=sample_ids)
         # (B,N,ndim)->(B,N,embed_dim)
         xyt = encode_position('nerf', position=xyt)
         x = self.Q_encoder(xyt)
@@ -108,7 +108,7 @@ class Trunk(nn.Module):
 # %%
 
 def NTOModelDefinition(branch_args, trunc_args):
-    geo_encoder, _ = GeoEncoderModelDefinition(**branch_args)
+    geo_encoder = GeoEncoderModelDefinition(**branch_args)
     branch = Branch(geo_encoder)
     trunk = Trunk(branch, **trunc_args)
     tot_num_params = sum(p.numel() for p in trunk.parameters())
@@ -153,7 +153,7 @@ def EvaluateForwardModel(trainer, test_loader, train_loader):
         f"Mean L2 error for training data: {np.mean(error_s)}, std: {np.std(error_s)}")
 
 
-def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, window_size=5000):
+def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, window_size=None):
 
     train_loader, test_loader, cells_test, s_inverse, pc_inverse, vert_inverse = configs.LoadDataGEJEBGeo(
         bs_train=32, bs_test=64)
@@ -166,8 +166,9 @@ def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, window_s
             pc = data[0].to(self.device)
             xyt = data[1].to(self.device)
             y_true = data[2].to(self.device)
+            sample_ids = data[3].to(self.device)
             mask = (y_true != self.models[0].padding_value).float()
-            y_pred = self.models[0](xyt, pc)
+            y_pred = self.models[0](xyt, pc, sample_ids)
             loss = nn.MSELoss(reduction='none')(y_true, y_pred)
             loss = (loss*mask).sum()/(mask.sum()+1)
             loss_dic = {"loss": loss.item()}
@@ -230,7 +231,7 @@ if __name__ == "__main__":
         "--train_flag", type=str, default="start")
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
-    parser.add_argument("--window_size", type=int, default=5000)
+    parser.add_argument("--window_size", type=int, default=None)
     args, unknown = parser.parse_known_args()
     print(vars(args))
 

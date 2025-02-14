@@ -20,7 +20,8 @@ import torch
 import torch.nn as nn
 
 from .transformer import ResidualCrossAttentionBlock
-from .pointnet2_utils import sample_and_group, sample_and_group_all
+from . import pointnet2_utils as pnet
+# from .pointnet2_utils import sample_and_group, sample_and_group_all
 import warnings
 
 # %%
@@ -110,15 +111,25 @@ class PointSetEmbedding(nn.Module):
             last_channel = out_channel
         self.group_all = group_all
         self.fps_method = fps_method
+        # clear the cache
+        pnet.CACHE_SAMPLE_AND_GROUP_INDECIES.clear()
 
-    def forward(self, xyz, points, pc_padding_value: Optional[int] = None):
+    def forward(self, xyz, points, pc_padding_value: Optional[int] = None,
+                sample_ids=None):
         """
         Input:
             xyz: input points position data, [B, C, N]
             points: input points data, [B, D, N]
+            sample_ids: the sample ids in each batch,[B,],
+            used for cache the sample and group indices
         Return:
             new_points: sample points feature data, [B, d_hidden[-1], n_point]
         """
+        if sample_ids is not None:
+            deterministic = True
+        else:
+            deterministic = not self.training
+
         xyz = xyz.permute(0, 2, 1)
         if points is not None:
             points = points.permute(0, 2, 1)
@@ -128,17 +139,18 @@ class PointSetEmbedding(nn.Module):
             # if want group_all, padding points should be avoided
             warnings.warn(
                 "group_all can not be used with padding points, I have not implemented it yet")
-            new_xyz, new_points = sample_and_group_all(xyz, points)
+            new_xyz, new_points = pnet.sample_and_group_all(xyz, points)
         else:
-            new_xyz, new_points = sample_and_group(
+            new_xyz, new_points = pnet.sample_and_group(
                 self.n_point,
                 self.radius,
                 self.n_sample,
                 xyz,
                 points,
-                deterministic=not self.training,
+                deterministic=deterministic,  # not self.training,
                 fps_method=self.fps_method,
                 pc_padding_value=pc_padding_value,
+                sample_ids=sample_ids
             )
         # new_xyz: sampled points position data, [B, n_point, C]
         # new_points: sampled points data, [B, n_point, n_sample, C+D]

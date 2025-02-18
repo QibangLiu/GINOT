@@ -12,14 +12,14 @@ if __package__:
     from .geoencoder import LoadGeoEncoderModel, GeoEncoderModelDefinition
     from .modules.UNets import UNet
     from .trainer import torch_trainer
-    from .modules.transformer import Transformer, MLP, ResidualCrossAttentionBlock
+    from .modules.transformer import SelfAttentionBlocks, MLP, ResidualCrossAttentionBlock
     from .modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
 else:
     import configs
     from geoencoder import LoadGeoEncoderModel, GeoEncoderModelDefinition
     from modules.UNets import UNet
     from trainer import torch_trainer
-    from modules.transformer import Transformer, MLP, ResidualCrossAttentionBlock
+    from modules.transformer import SelfAttentionBlocks, MLP, ResidualCrossAttentionBlock
     from modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

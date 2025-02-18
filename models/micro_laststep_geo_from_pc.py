@@ -25,39 +25,61 @@ else:
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-
 # %%
 
 class Trunk(nn.Module):
-    def __init__(self, branch, embed_dim=64, num_heads=4, cross_attn_layers=4, padding_value=-10, in_channels=2, out_channels=1, emd_version="nerf"):
+    def __init__(self, branch, embed_dim=64, cross_attn_layers=4, num_heads=4,
+                 in_channels=2, out_channels=3,
+                 dropout=0.0, emd_version="nerf", padding_value=-10):
         super().__init__()
         self.padding_value = padding_value
-        # d = position_encoding_channels(emd_version)
-        self.Q_encoder = MLP(embed_dim, in_channels)
+        d = position_encoding_channels(emd_version)
+        # self.Q_encoder = MLP(embed_dim, in_channels)
+        self.Q_encoder = nn.Sequential(nn.Linear(d*in_channels, 2*embed_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(2*embed_dim, 3*embed_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(3*embed_dim, 2*embed_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(2*embed_dim, embed_dim)
+                                       )
         self.branch = branch
         self.resblocks = nn.ModuleList(
             [
                 ResidualCrossAttentionBlock(
                     width=embed_dim,
-                    heads=num_heads
+                    heads=num_heads,
+                    dropout=dropout,
                 )
                 for _ in range(cross_attn_layers)
             ]
         )
-        self.output_proj = nn.Linear(
-            embed_dim, out_channels)
+        self.output_proj = nn.Sequential(nn.Linear(embed_dim, 2*embed_dim),
+                                         nn.ReLU(),
+                                         nn.Dropout(dropout),
+                                         nn.Linear(2*embed_dim, 3*embed_dim),
+                                         nn.ReLU(),
+                                         nn.Dropout(dropout),
+                                         nn.Linear(3*embed_dim, 3*embed_dim),
+                                         nn.ReLU(),
+                                         nn.Dropout(dropout),
+                                         nn.Linear(3*embed_dim, 2*embed_dim),
+                                         nn.ReLU(),
+                                         nn.Dropout(dropout),
+                                         nn.Linear(2*embed_dim, out_channels)
+                                         )
 
     def forward(self, xyt, pc, sample_ids=None):
         # (B, latenc, embed_dim)
         latent = self.branch(pc, sample_ids=sample_ids)
-        # (B,N,2)->(B,N,embed_dim)
-        # xyt = encode_position('nerf', position=xyt)
+        # (B,N,ndim)->(B,N,embed_dim)
+        xyt = encode_position('nerf', position=xyt)
         x = self.Q_encoder(xyt)
         for block in self.resblocks:
             x = block(x, latent)  # (B, N, embed_dim)
-        # (B, N, embed_dim)->(B, N, 1)
+        # (B, N, embed_dim)->(B, N, 3)
         x = self.output_proj(x)
-        return x.squeeze(-1)
+        return x
 
 
 # %%
@@ -79,19 +101,7 @@ def NTOModelDefinition(branch_args, trunc_args):
     return trunk
 
 
-def LoadNTOModel(filebase, branch_args, trunc_args):
-    trunk = NTOModelDefinition(branch_args, trunc_args)
-    NN_path = os.path.join(filebase, "model.ckpt")
-    state_dict = torch.load(
-        NN_path, map_location=device, weights_only=True)
-    trunk.load_state_dict(state_dict)
-    trunk.to(device)
-    trunk.eval()
-    return trunk
-
 # %%
-
-
 def EvaluateForwardModel(trainer, test_loader, train_loader):
     trainer.load_weights(device=device)
 
@@ -99,11 +109,16 @@ def EvaluateForwardModel(trainer, test_loader, train_loader):
         y_pred, y_true = trainer.predict(test_loader)
         error_s = []
         for y_p, y_t in zip(y_pred, y_true):
-            s_p, s_t = y_p[:], y_t[:]
+            s_p, s_t = y_p[:, 0], y_t[:, 0]
+            ux_p, ux_t = y_p[:, 1], y_t[:, 1]
+            uy_p, uy_t = y_p[:, 2], y_t[:, 2]
             e_s = np.linalg.norm(s_p-s_t)/np.linalg.norm(s_t)
-            error_s.append(e_s)
+            e_ux = np.linalg.norm(ux_p-ux_t)/np.linalg.norm(ux_t)
+            e_uy = np.linalg.norm(uy_p-uy_t)/np.linalg.norm(uy_t)
+            error_s.append((e_s+e_ux+e_uy)/3)
         error_s = np.array(error_s)
         return error_s
+
     error_s = cal_l2_error(test_loader)
     sort_idx = np.argsort(error_s)
     idx_best = sort_idx[0]
@@ -117,17 +132,16 @@ def EvaluateForwardModel(trainer, test_loader, train_loader):
 
     print(
         f"Mean L2 error for test data: {np.mean(error_s)}, std: {np.std(error_s)}")
+
     error_s = cal_l2_error(train_loader)
     print(
         f"Mean L2 error for training data: {np.mean(error_s)}, std: {np.std(error_s)}")
 
 
-def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, struct=False):
+def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, window_size=None):
 
-    train_dataset, test_dataset, cells = configs.LoadDataPoissionGeo(
-        struct=struct)
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=512, shuffle=False)
+    train_loader, test_loader, _, su_inverse = configs.LoadDataMicroSturcGeo(
+        bs_train=64, bs_test=128)
 
     class TRAINER(torch_trainer.TorchTrainer):
         def __init__(self, models, device, filebase):
@@ -137,9 +151,9 @@ def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, struct=F
             pc = data[0].to(self.device)
             xyt = data[1].to(self.device)
             y_true = data[2].to(self.device)
-            sample_ids = data[3]
+            sample_ids = data[3].to(self.device)
             mask = (y_true != self.models[0].padding_value).float()
-            y_pred = self.models[0](xyt, pc, )  # sample_ids
+            y_pred = self.models[0](xyt, pc)  # sample_ids
             loss = nn.MSELoss(reduction='none')(y_true, y_pred)
             loss = (loss*mask).sum()/(mask.sum()+1)
             loss_dic = {"loss": loss.item()}
@@ -154,29 +168,34 @@ def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, struct=F
                     pc = data[0].to(self.device)
                     xyt = data[1].to(self.device)
                     y_true_batch = data[2].to(self.device)
-                    sample_ids = data[3]
                     mask = (y_true_batch != self.models[0].padding_value)
-                    pred = self.models[0](xyt, pc, )  # sample_ids
+                    pred = self.models[0](xyt, pc)
+                    pred = su_inverse(pred)
+                    y_true_batch = su_inverse(y_true_batch)
                     pred = [x[i].view(-1, *i.shape[1:]).cpu().detach().numpy()
                             for x, i in zip(pred, mask)]
                     y_true_batch = [x[i].view(-1, *i.shape[1:]).cpu().detach().numpy()
                                     for x, i in zip(y_true_batch, mask)]
+
                     y_pred = y_pred+pred
                     y_true = y_true+y_true_batch
+
             return y_pred, y_true
 
     trainer = TRAINER(
         NTO_model, device, filebase)
     optimizer = torch.optim.Adam(trainer.parameters(), lr=lr)
     checkpoint = torch_trainer.ModelCheckpoint(
-        monitor="val_loss", save_best_only=True)
+        monitor="loss", save_best_only=True)
     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.7, patience=40)
+        optimizer, factor=0.7, patience=20)
     trainer.compile(
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
         checkpoint=checkpoint,
         scheduler_metric_name="val_loss",
+        window_size=window_size,
+        sequence_idx=[1, 2],
     )
     if train_flag == "continue":
         trainer.load_weights(device=device)
@@ -195,24 +214,24 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--train_flag", type=str, default="start")
-    parser.add_argument("--epochs", type=int, default=500)
+    parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
-    parser.add_argument("--struct", action="store_true", default=False)
+    parser.add_argument("--window_size", type=int, default=None)
     args, unknown = parser.parse_known_args()
     print(vars(args))
 
-    configs_poission_geo_from_pc = configs.poission_geo_from_pc_configs(
-        struct=args.struct)
+    configs_geo_from_pc = configs.microstru_geo_from_pc_configs()
 
-    filebase = configs_poission_geo_from_pc["filebase"]
-    trunk_args = configs_poission_geo_from_pc["trunk_args"]
-    branch_args = configs_poission_geo_from_pc["branch_args"]
-    print(configs_poission_geo_from_pc)
+    filebase = configs_geo_from_pc["filebase"]
+    trunk_args = configs_geo_from_pc["trunk_args"]
+    branch_args = configs_geo_from_pc["branch_args"]
+    print(configs_geo_from_pc)
 
     NTO_model = NTOModelDefinition(branch_args, trunk_args)
 
     trainer = TrainNTOModel(NTO_model, filebase, args.train_flag,
-                            epochs=args.epochs, lr=args.learning_rate, struct=args.struct)
+                            epochs=args.epochs, lr=args.learning_rate,
+                            window_size=args.window_size)
     print(filebase, " training finished")
 
 # %%

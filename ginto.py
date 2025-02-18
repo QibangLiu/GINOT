@@ -1,7 +1,7 @@
 # %%
 
 from typing import List, Optional, Tuple, Union
-from modules.transformer import Transformer, ResidualCrossAttentionBlock, MLP
+from modules.transformer import SelfAttentionBlocks, ResidualCrossAttentionBlock, MLP
 from modules.point_encoding import PointSetEmbedding, SimplePerceiver
 from modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
 from torch.nn.utils.rnn import pad_sequence
@@ -190,7 +190,7 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         self.encoder = SimplePerceiver(
             width=self.width, heads=num_heads, layers=cross_attn_layers)
 
-        self.processor = Transformer(
+        self.processor = SelfAttentionBlocks(
             width=self.width, heads=num_heads, layers=self_attn_layers)
         self.output_proj = nn.Linear(
             self.width, self.out_c)
@@ -268,7 +268,7 @@ class Trunk(nn.Module):
                 for _ in range(4)
             ]
         )
-        self.processor = Transformer(width=embed_dim,
+        self.processor = SelfAttentionBlocks(width=embed_dim,
                                      heads=4,
                                      layers=4)
         self.output_proj = nn.Linear(

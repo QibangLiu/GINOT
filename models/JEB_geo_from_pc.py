@@ -9,47 +9,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 if __package__:
     from . import configs
-    from .geoencoder import LoadGeoEncoderModel, GeoEncoderModelDefinition
+    from .modules.point_encoding import PointCloudPerceiverChannelsEncoder
     from .modules.UNets import UNet
     from .trainer import torch_trainer
-    from .modules.transformer import Transformer, MLP, ResidualCrossAttentionBlock
+    from .modules.transformer import SelfAttentionBlocks, MLP, ResidualCrossAttentionBlock
     from .modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
 else:
     import configs
-    from geoencoder import LoadGeoEncoderModel, GeoEncoderModelDefinition
+    from modules.point_encoding import PointCloudPerceiverChannelsEncoder
     from modules.UNets import UNet
     from trainer import torch_trainer
-    from modules.transformer import Transformer, MLP, ResidualCrossAttentionBlock
+    from modules.transformer import SelfAttentionBlocks, MLP, ResidualCrossAttentionBlock
     from modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# %%
-
-
-class Branch(nn.Module):
-    def __init__(
-        self,
-        geo_encoder,
-
-    ):
-        super().__init__()
-        self.geo_encoder = geo_encoder
-
-        latent_d = geo_encoder.latent_d
-        out_c = geo_encoder.out_c
-
-    def forward(self, pc, sample_ids=None):
-        """
-        Args:
-            pc: point cloud (B,N,2)
-            grid_points: grid points (Nx*Ny,2) Nx=Ny=120
-        """
-        # (B, N, 2)->(B,latent_dim,out_c)
-        x = self.geo_encoder(
-            pc, apply_padding_pointnet2=True, sample_ids=sample_ids,)
-
-        return x
 
 
 # %%
@@ -65,8 +38,6 @@ class Trunk(nn.Module):
         self.Q_encoder = nn.Sequential(nn.Linear(d*in_channels, 2*embed_dim),
                                        nn.ReLU(),
                                        nn.Linear(2*embed_dim, 3*embed_dim),
-                                       nn.ReLU(),
-                                       nn.Linear(3*embed_dim, 3*embed_dim),
                                        nn.ReLU(),
                                        nn.Linear(3*embed_dim, 2*embed_dim),
                                        nn.ReLU(),
@@ -86,7 +57,13 @@ class Trunk(nn.Module):
         self.output_proj = nn.Sequential(nn.Linear(embed_dim, 2*embed_dim),
                                          nn.ReLU(),
                                          nn.Dropout(dropout),
-                                         nn.Linear(2*embed_dim, 2*embed_dim),
+                                         nn.Linear(2*embed_dim, 3*embed_dim),
+                                         nn.ReLU(),
+                                         nn.Dropout(dropout),
+                                         nn.Linear(3*embed_dim, 3*embed_dim),
+                                         nn.ReLU(),
+                                         nn.Dropout(dropout),
+                                         nn.Linear(3*embed_dim, 2*embed_dim),
                                          nn.ReLU(),
                                          nn.Dropout(dropout),
                                          nn.Linear(2*embed_dim, out_channels)
@@ -108,8 +85,12 @@ class Trunk(nn.Module):
 # %%
 
 def NTOModelDefinition(branch_args, trunc_args):
-    geo_encoder = GeoEncoderModelDefinition(**branch_args)
-    branch = Branch(geo_encoder)
+    branch = PointCloudPerceiverChannelsEncoder(**branch_args)
+    tot_num_params = sum(p.numel() for p in branch.parameters())
+    trainable_params = sum(p.numel()
+                           for p in branch.parameters() if p.requires_grad)
+    print(
+        f"Total number of parameters of Geo encoder: {tot_num_params}, {trainable_params} of which are trainable")
     trunk = Trunk(branch, **trunc_args)
     tot_num_params = sum(p.numel() for p in trunk.parameters())
     trainable_params = sum(p.numel()
@@ -155,8 +136,8 @@ def EvaluateForwardModel(trainer, test_loader, train_loader):
 
 def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, window_size=None):
 
-    train_loader, test_loader, cells_test, s_inverse, pc_inverse, vert_inverse = configs.LoadDataGEJEBGeo(
-        bs_train=32, bs_test=64)
+    train_loader, test_loader, _, s_inverse, pc_inverse, vert_inverse = configs.LoadDataGEJEBGeo(
+        bs_train=32, bs_test=32)
 
     class TRAINER(torch_trainer.TorchTrainer):
         def __init__(self, models, device, filebase):
@@ -201,9 +182,9 @@ def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, window_s
         NTO_model, device, filebase)
     optimizer = torch.optim.Adam(trainer.parameters(), lr=lr)
     checkpoint = torch_trainer.ModelCheckpoint(
-        monitor="val_loss", save_best_only=True)
+        monitor="loss", save_best_only=True)
     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.7, patience=40)
+        optimizer, factor=0.7, patience=80)
     trainer.compile(
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,

@@ -71,7 +71,7 @@ class ResidualAttentionBlock(nn.Module):
         return x
 
 
-class Transformer(nn.Module):
+class SelfAttentionBlocks(nn.Module):
     def __init__(
         self,
         *,

@@ -23,7 +23,7 @@ DATA_FILEBASE = f"{SCRIPT_PATH}/../data"
 DATA_FILE = f"{DATA_FILEBASE}/node_pc_mises_disp_laststep_aug.pkl"
 
 
-PADDING_VALUE = -10
+PADDING_VALUE = -1000
 NUM_POINT_POINTNET2 = 128
 
 # %%
@@ -200,7 +200,7 @@ def LoadDataPoissionGeo(struct=True, test_size=0.2, seed=42):
 def poission_geo_from_pc_configs(struct=True):
 
     if struct:
-        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_geo_struct_msh_test1_detert"
+        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_geo_struct_msh_test1_detertNO32bs"
     else:
         NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_geo_unstruct_msh"
 
@@ -358,8 +358,108 @@ def shape_car_geo_from_pc_configs():
 
 # =============================================================================
 # %%
+# ========================microstruc           ================================
+def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, padding_value=PADDING_VALUE):
+    # folder_path = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/pc_fieldoutput_11fram/dataset_0-10000_12-92"
+    data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel_new/node_pc_mises_disp_laststep_aug.pkl"
+    with open(os.path.join(data_file), "rb") as f:
+        mises_disp_data = pickle.load(f)
+        SU_raw = mises_disp_data['mises_disp']
+        su_shift = mises_disp_data['shift']
+        su_scaler = mises_disp_data['scaler']
+        coords = mises_disp_data['mesh_coords']
+        point_cloud = mises_disp_data['points_cloud']
+    mesh_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/pc_fieldoutput_11fram/dataset_0-10000_12-92/mesh_pc.pkl"
+    with open(os.path.join(mesh_file), "rb") as f:
+        data_mesh = pickle.load(f)
+        # coords = data_mesh['mesh_coords']
+        cells = data_mesh['mesh_connect']
+        # point_cloud = data_mesh['point_cloud']
+        # sample_ids = data_mesh['valid_sample_ids']
+
+    SU = [torch.tensor((su-su_shift)/su_scaler) for su in SU_raw]  # (Nb, N, 3)
+    su_shift = torch.tensor(su_shift)[None, :]  # (1,1,3)
+    su_scaler = torch.tensor(su_scaler)[None, :]  # (1, 1, 3)
+    xyt = [torch.tensor(x[:, :2]) for x in coords]  # (Nb, N, 2)
+    point_cloud = [torch.tensor(x[:, :2])
+                   for x in point_cloud]  # (Nb,N,3)->(Nb, N, 2)
+    # split test and train data
+    train_ids, test_ids = train_test_split(
+        np.arange(len(point_cloud)), test_size=test_size, random_state=seed)
+    # test_ids = np.arange(0, 10000)
+    # train_ids = np.arange(10000, len(point_cloud))
+    train_pc = [point_cloud[i] for i in train_ids]
+    test_pc = [point_cloud[i] for i in test_ids]
+    train_xyt = [xyt[i] for i in train_ids]
+    test_xyt = [xyt[i] for i in test_ids]
+    train_S = [SU[i] for i in train_ids]
+    test_S = [SU[i] for i in test_ids]
+    train_dataset = ListDataset(
+        (train_pc, train_xyt, train_S, torch.tensor(train_ids)))
+    test_dataset = ListDataset(
+        (test_pc, test_xyt, test_S, torch.tensor(test_ids)))
+
+    def pad_collate_fn(batch):
+        pc_batch = [item[0] for item in batch]  # Extract pc (variable-length)
+        xyt_batch = [item[1]
+                     for item in batch]  # Extract xyt (variable-length)
+        S = [item[2] for item in batch]  # Extract S (variable-length)
+        sample_ids = torch.stack([item[3] for item in batch])
+        # y_batch = torch.stack([item[1] for item in batch])  # Extract and stack y (fixed-length)
+        # Pad sequences
+        pc_padded = pad_sequence(
+            pc_batch, batch_first=True, padding_value=padding_value)
+        xyt_padded = pad_sequence(
+            xyt_batch, batch_first=True, padding_value=padding_value)
+        S_padded = pad_sequence(S, batch_first=True,
+                                padding_value=padding_value)
+        return pc_padded, xyt_padded, S_padded, sample_ids
+    train_dataloader = DataLoader(train_dataset, batch_size=bs_train, shuffle=True,
+                                  collate_fn=pad_collate_fn)
+    test_dataloader = DataLoader(test_dataset, batch_size=bs_test, shuffle=False,
+                                 collate_fn=pad_collate_fn)
+
+    def SUInverse(x):
+        su_sig = su_scaler.to(x.device)
+        su_mu = su_shift.to(x.device)
+        return x*su_sig+su_mu
+
+    su_inverse = SUInverse
+    return train_dataloader, test_dataloader, cells, su_inverse
+
+
+def microstru_geo_from_pc_configs():
+    fps_method = "fps"
+    out_c = 128
+    dropout = 0.0
+    geo_encoder_model_args = {
+        "input_channels": 2,
+        "out_c": out_c,
+        "latent_d": None,
+        "width": 128,
+        "n_point": 128,
+        "n_sample": 8,
+        "radius": 0.2,
+        "d_hidden": [128, 128],
+        "num_heads": 4,
+        "cross_attn_layers": 1,
+        "self_attn_layers": 2,
+        "fps_method": fps_method,
+        "pc_padding_val": PADDING_VALUE,
+        "dropout": dropout,
+    }
+    trunc_model_args = {"embed_dim": out_c,
+                        "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/micro_laststep_geo_from_pc_test4"
+    args_all = {"branch_args": geo_encoder_model_args,
+                "trunk_args": trunc_model_args, "filebase": NTO_filebase}
+    return args_all
+# =============================================================================
+# %%
 # ========================GE Jet Engine Bracket================================
-def LoadDataGEJEBGeo(bs_train=32, bs_test=128, test_size=0.1, seed=42, padding_value=PADDING_VALUE):
+
+
+def LoadDataGEJEBGeo(bs_train=32, bs_test=128, test_size=0.05, seed=42, padding_value=PADDING_VALUE):
     start = time.time()
     # load data
     data_file = f"{DATA_FILEBASE}/GEJetEngineBracket/GE-JEB.pkl"
@@ -373,7 +473,7 @@ def LoadDataGEJEBGeo(bs_train=32, bs_test=128, test_size=0.1, seed=42, padding_v
     vert_concat = np.concatenate(vertices, axis=0, dtype=np.float32)
     vert_shift, vert_scale = np.mean(
         vert_concat, axis=0), np.std(vert_concat, axis=0)
-    vert_shift = vert_shift[None, :]
+    vert_shift = vert_shift[None, :]  # (1,3)
     vert_scale = vert_scale[None, :]
 
     pc_concat = np.concatenate(points_cloud, axis=0, dtype=np.float32)
@@ -393,7 +493,7 @@ def LoadDataGEJEBGeo(bs_train=32, bs_test=128, test_size=0.1, seed=42, padding_v
                   for s in nodal_stress]
     pc_shift = torch.tensor(pc_shift)[None, :]
     pc_scale = torch.tensor(pc_scale)[None, :]
-    vert_shift = torch.tensor(vert_shift)[None, :]
+    vert_shift = torch.tensor(vert_shift)[None, :]  # (1, 1,3)
     vert_scale = torch.tensor(vert_scale)[None, :]
     # split test and train data
     train_ids, test_ids = train_test_split(
@@ -454,26 +554,26 @@ def LoadDataGEJEBGeo(bs_train=32, bs_test=128, test_size=0.1, seed=42, padding_v
 def JEB_geo_from_pc_configs():
     fps_method = "fps"
     out_c = 128
-    dropout = 0
+    dropout = 0.0
     geo_encoder_model_args = {
         "input_channels": 3,
         "out_c": out_c,
-        "latent_d": 256,
+        "latent_d": None,
         "width": 128,
         "n_point": 512,
         "n_sample": 64,
         "radius": 0.5,
-        "d_hidden": [64, 128],
+        "d_hidden": [128, 128],
         "num_heads": 8,
         "cross_attn_layers": 1,
         "self_attn_layers": 2,
         "fps_method": fps_method,
         "pc_padding_val": PADDING_VALUE,
-        "dropout": dropout
+        "dropout": dropout,
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_geo_from_pc_test1_cache"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_geo_from_pc_test4"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all

@@ -84,7 +84,7 @@ class Trunk(nn.Module):
 
 # %%
 
-def NTOModelDefinition(branch_args, trunc_args):
+def NOTModelDefinition(branch_args, trunc_args):
     branch = PointCloudPerceiverChannelsEncoder(**branch_args)
     tot_num_params = sum(p.numel() for p in branch.parameters())
     trainable_params = sum(p.numel()
@@ -96,7 +96,7 @@ def NTOModelDefinition(branch_args, trunc_args):
     trainable_params = sum(p.numel()
                            for p in trunk.parameters() if p.requires_grad)
     print(
-        f"Total number of parameters of NTO model: {tot_num_params}, {trainable_params} of which are trainable")
+        f"Total number of parameters of NOT model: {tot_num_params}, {trainable_params} of which are trainable")
 
     return trunk
 
@@ -134,9 +134,9 @@ def EvaluateForwardModel(trainer, test_loader, train_loader):
         f"Mean L2 error for training data: {np.mean(error_s)}, std: {np.std(error_s)}")
 
 
-def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, window_size=None):
+def TrainNOTModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, window_size=None):
 
-    train_loader, test_loader, _, s_inverse, pc_inverse, vert_inverse = configs.LoadDataGEJEBGeo(
+    train_loader, test_loader, _, s_inverse, pc_inverse, vert_inverse = configs.LoadDataJEBGeo(
         bs_train=32, bs_test=32)
 
     class TRAINER(torch_trainer.TorchTrainer):
@@ -184,12 +184,12 @@ def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, window_s
     checkpoint = torch_trainer.ModelCheckpoint(
         monitor="loss", save_best_only=True)
     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.7, patience=80)
+        optimizer, factor=0.7, patience=40)
     trainer.compile(
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
         checkpoint=checkpoint,
-        scheduler_metric_name="val_loss",
+        scheduler_metric_name="loss",
         window_size=window_size,
         sequence_idx=[1, 2],
     )
@@ -205,6 +205,16 @@ def TrainNTOModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, window_s
     return trainer
 
 
+def LoadModel(filebase, branch_args, trunk_args):
+    NTO_model = NOTModelDefinition(branch_args, trunk_args)
+    model_path = os.path.join(filebase, "model.ckpt")
+    state_dict = torch.load(model_path, map_location=device, weights_only=True)
+    NTO_model.load_state_dict(state_dict)
+    NTO_model.to(device)
+    NTO_model.eval()
+    return NTO_model
+
+
 # %%
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -216,16 +226,16 @@ if __name__ == "__main__":
     args, unknown = parser.parse_known_args()
     print(vars(args))
 
-    configs_geo_from_pc = configs.JEB_geo_from_pc_configs()
+    configs_geo_from_pc = configs.JEB_geo_configs()
 
     filebase = configs_geo_from_pc["filebase"]
     trunk_args = configs_geo_from_pc["trunk_args"]
     branch_args = configs_geo_from_pc["branch_args"]
     print(configs_geo_from_pc)
 
-    NTO_model = NTOModelDefinition(branch_args, trunk_args)
+    NTO_model = NOTModelDefinition(branch_args, trunk_args)
 
-    trainer = TrainNTOModel(NTO_model, filebase, args.train_flag,
+    trainer = TrainNOTModel(NTO_model, filebase, args.train_flag,
                             epochs=args.epochs, lr=args.learning_rate,
                             window_size=args.window_size)
     print(filebase, " training finished")

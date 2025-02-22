@@ -62,7 +62,12 @@ else:
   print("All files exist.")
 
 # %%
-check_file = 1844
+sample_index = sample_ids.index("634_421")
+print(
+    f"The index of sample_id '634_421' is: {sample_index}, {sample_ids[sample_index]}")
+
+# %%
+check_file = sample_index
 # Load the first field mesh file using h5py
 with h5py.File(field_mesh_files[check_file], 'r') as f:
     print("Keys: %s" % f.keys())
@@ -70,7 +75,7 @@ with h5py.File(field_mesh_files[check_file], 'r') as f:
     nodal_var = f['nodal_variables']
     print("nodal_var: %s" % nodal_var.keys())
 # %%
-nodal_variable_name = "ver_y_disp(mm)"
+nodal_variable_name = "ver_stress(MPa)"
 with h5py.File(field_mesh_files[check_file], 'r') as f:
     nodal_variable = f['nodal_variables'][nodal_variable_name][:].astype(
         np.float32)
@@ -82,7 +87,7 @@ nodal_variable = np.append(nodal_variable, [0]*5)
 vtk_mesh.point_data[nodal_variable_name] = nodal_variable
 # Plot the VTK mesh
 plotter = pv.Plotter()
-plotter.add_mesh(vtk_mesh, show_edges=False, cmap="coolwarm")
+plotter.add_mesh(vtk_mesh, show_edges=True, cmap="jet")
 plotter.show()
 
 # %%
@@ -117,7 +122,8 @@ new_celltypes = np.full(len(corrected_cells), pv.CellType.TETRA)
 new_mesh = pv.UnstructuredGrid(corrected_cells, new_celltypes, new_points)
 new_mesh.point_data[nodal_variable_name] = new_nodal_variable
 plotter = pv.Plotter()
-plotter.add_mesh(new_mesh, show_edges=True, opacity=0.3)
+# plotter.add_points(new_points, color="red", point_size=5)
+plotter.add_mesh(new_mesh, show_edges=True, opacity=1.0, cmap="jet")
 plotter.show()
 
 
@@ -130,4 +136,12 @@ plotter.show()
 plotter = pv.Plotter()
 plotter.add_mesh(surface_points, color="lightblue", show_edges=True)
 plotter.show()
+# %%
+points_cloud_dic = np.load(f"{data_path}points_cloud_dict.npz")
+surface_points = points_cloud_dic[sample_ids[sample_index]]
+plotter = pv.Plotter()
+plotter.add_mesh(surface_points, color="green",
+                 point_size=8)
+plotter.show()
+
 # %%

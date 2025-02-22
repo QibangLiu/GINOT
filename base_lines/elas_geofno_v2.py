@@ -107,7 +107,7 @@ class SpectralConv2d(nn.Module):
         # print(x.shape)
         # K = <y, k_x>,  (batch, N, m1, m2)
         K1 = torch.outer(x[..., 0].view(-1), k_x1.view(-1)
-                         ).reshape(batchsize, N, m1, m2)
+                         ).reshape(batchsize, N, m1, m2) # have issue here if padding is not correct
         K2 = torch.outer(x[..., 1].view(-1), k_x2.view(-1)
                          ).reshape(batchsize, N, m1, m2)
         K = K1 + K2
@@ -387,6 +387,7 @@ optimizer_iphi = Adam(model_iphi.parameters(),
 scheduler_iphi = torch.optim.lr_scheduler.CosineAnnealingLR(
     optimizer_iphi, T_max=200)
 
+#%%
 myloss = LpLoss(size_average=False)
 N_sample = 1000
 for ep in range(epochs):

@@ -9,14 +9,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 if __package__:
     from . import configs
-    from .geoencoder import LoadGeoEncoderModel, GeoEncoderModelDefinition
+    from .modules.point_encoding import PointCloudPerceiverChannelsEncoder
     from .modules.UNets import UNet
     from .trainer import torch_trainer
     from .modules.transformer import SelfAttentionBlocks, MLP, ResidualCrossAttentionBlock
     from .modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
 else:
     import configs
-    from geoencoder import LoadGeoEncoderModel, GeoEncoderModelDefinition
+    from modules.point_encoding import PointCloudPerceiverChannelsEncoder
     from modules.UNets import UNet
     from trainer import torch_trainer
     from modules.transformer import SelfAttentionBlocks, MLP, ResidualCrossAttentionBlock
@@ -24,37 +24,11 @@ else:
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# %%
-
-
-class Branch(nn.Module):
-    def __init__(
-        self,
-        geo_encoder,
-
-    ):
-        super().__init__()
-        self.geo_encoder = geo_encoder
-
-        latent_d = geo_encoder.latent_d
-        out_c = geo_encoder.out_c
-
-    def forward(self, pc):
-        """
-        Args:
-            pc: point cloud (B,N,2)
-            grid_points: grid points (Nx*Ny,2) Nx=Ny=120
-        """
-        # (B, N, 2)->(B,latent_dim,out_c)
-        x = self.geo_encoder(pc)
-
-        return x
-
 
 # %%
 
 class Trunk(nn.Module):
-    def __init__(self, branch, embed_dim=64, cross_attn_layers=4, in_channels=2, out_channels=1, emd_version="nerf"):
+    def __init__(self, branch, embed_dim=64,num_heads=4, cross_attn_layers=4, in_channels=2, out_channels=1, emd_version="nerf"):
         super().__init__()
         # d = position_encoding_channels(emd_version)
         self.Q_encoder = MLP(embed_dim, in_channels)
@@ -63,7 +37,7 @@ class Trunk(nn.Module):
             [
                 ResidualCrossAttentionBlock(
                     width=embed_dim,
-                    heads=4
+                    heads=num_heads
                 )
                 for _ in range(cross_attn_layers)
             ]
@@ -86,8 +60,12 @@ class Trunk(nn.Module):
 # %%
 
 def NTOModelDefinition(branch_args, trunc_args):
-    geo_encoder = GeoEncoderModelDefinition(**branch_args)
-    branch = Branch(geo_encoder)
+    branch = PointCloudPerceiverChannelsEncoder(**branch_args)
+    tot_num_params = sum(p.numel() for p in branch.parameters())
+    trainable_params = sum(p.numel()
+                           for p in branch.parameters() if p.requires_grad)
+    print(
+        f"Total number of parameters of Geo encoder: {tot_num_params}, {trainable_params} of which are trainable")
     trunk = Trunk(branch, **trunc_args)
     tot_num_params = sum(p.numel() for p in trunk.parameters())
     trainable_params = sum(p.numel()

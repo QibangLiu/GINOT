@@ -200,17 +200,17 @@ def LoadDataPoissionGeo(struct=True, test_size=0.2, seed=42):
 def poission_geo_from_pc_configs(struct=True):
 
     if struct:
-        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_geo_struct_msh_test1_detertNO32bs"
+        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_geo_struct_msh_ldNone"
     else:
-        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_geo_unstruct_msh"
+        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_geo_unstruct_msh_ldNone"
 
     fps_method = "fps"
     out_c = 64
     geo_encoder_model_args = {
         "out_c": out_c,
-        "latent_d": 64,
+        "latent_d": None,
         "width": 128,
-        "n_point": 36,
+        "n_point": 64,
         "n_sample": 18,
         "radius": 0.2,
         "d_hidden": [128, 128],
@@ -268,9 +268,9 @@ def elasticity_geo_from_pc_configs():
     out_c = 64
     geo_encoder_model_args = {
         "out_c": out_c,
-        "latent_d": 64,
+        "latent_d": None,
         "width": 64,
-        "n_point": 36,
+        "n_point": 64,
         "n_sample": 18,
         "radius": 0.2,
         "d_hidden": [64, 64],
@@ -281,7 +281,7 @@ def elasticity_geo_from_pc_configs():
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 6}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/elasticity_geo_from_pc_for"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/elasticity_geo_from_pc_ldNone"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
@@ -442,15 +442,15 @@ def microstru_geo_from_pc_configs():
         "radius": 0.2,
         "d_hidden": [128, 128],
         "num_heads": 4,
-        "cross_attn_layers": 1,
+        "cross_attn_layers": 2,
         "self_attn_layers": 2,
         "fps_method": fps_method,
         "pc_padding_val": PADDING_VALUE,
         "dropout": dropout,
     }
     trunc_model_args = {"embed_dim": out_c,
-                        "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/micro_laststep_geo_from_pc_test4"
+                        "cross_attn_layers": 4, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/micro_laststep_geo_from_pc_test5"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
@@ -459,7 +459,7 @@ def microstru_geo_from_pc_configs():
 # ========================GE Jet Engine Bracket================================
 
 
-def LoadDataGEJEBGeo(bs_train=32, bs_test=128, test_size=0.05, seed=42, padding_value=PADDING_VALUE):
+def LoadDataJEBGeo(bs_train=32, bs_test=128, test_size=0.05, seed=42, padding_value=PADDING_VALUE, shuffle_loader=True):
     start = time.time()
     # load data
     data_file = f"{DATA_FILEBASE}/GEJetEngineBracket/GE-JEB.pkl"
@@ -528,7 +528,7 @@ def LoadDataGEJEBGeo(bs_train=32, bs_test=128, test_size=0.05, seed=42, padding_
                                 padding_value=padding_value)
         return pc_padded, xyt_padded, S_padded, sample_ids
 
-    train_dataloader = DataLoader(train_dataset, batch_size=bs_train, shuffle=True,
+    train_dataloader = DataLoader(train_dataset, batch_size=bs_train, shuffle=shuffle_loader,
                                   collate_fn=pad_collate_fn)
     test_dataloader = DataLoader(test_dataset, batch_size=bs_test, shuffle=False,
                                  collate_fn=pad_collate_fn)
@@ -537,21 +537,21 @@ def LoadDataGEJEBGeo(bs_train=32, bs_test=128, test_size=0.05, seed=42, padding_
     s_inverse = SigmaInverse
 
     def PCInverse(x):
-        pc_scale = pc_scale.to(x.device)
-        pc_shift = pc_shift.to(x.device)
-        return x*pc_scale+pc_shift
+        pc_scale_ = pc_scale.to(x.device)
+        pc_shift_ = pc_shift.to(x.device)
+        return x*pc_scale_+pc_shift_
     pc_inverse = PCInverse
 
     def VertInverse(x):
-        vert_scale = vert_scale.to(x.device)
-        vert_shift = vert_shift.to(x.device)
-        return x*vert_scale+vert_shift
+        vert_scale_ = vert_scale.to(x.device)
+        vert_shift_ = vert_shift.to(x.device)
+        return x*vert_scale_+vert_shift_
     vert_inverse = VertInverse
     print(f"Data loading time: {time.time()-start:.2f} s")
     return train_dataloader, test_dataloader, cells, s_inverse, pc_inverse, vert_inverse
 
 
-def JEB_geo_from_pc_configs():
+def JEB_geo_configs():
     fps_method = "fps"
     out_c = 128
     dropout = 0.0
@@ -573,7 +573,7 @@ def JEB_geo_from_pc_configs():
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_geo_from_pc_test4"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all

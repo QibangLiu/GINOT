@@ -196,12 +196,12 @@ def LoadDataPoissionGeo(struct=True, test_size=0.2, seed=42):
     return train_dataset, test_dataset, cells_all
 
 
-def poission_geo_from_pc_configs(struct=True):
+def poission_GINOT_configs(struct=True):
 
     if struct:
-        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_geo_struct_msh_ldNone"
+        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_ginot_struct_msh_ldNone"
     else:
-        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_geo_unstruct_msh_ldNone"
+        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_ginot_unstruct_msh_ldNone"
 
     fps_method = "fps"
     out_c = 64

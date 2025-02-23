@@ -220,13 +220,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--train_flag", type=str, default="start")
-    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--epochs", type=int, default=2400)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--window_size", type=int, default=None)
     args, unknown = parser.parse_known_args()
     print(vars(args))
 
-    configs_geo_from_pc = configs.JEB_geo_configs()
+    configs_geo_from_pc = configs.JEB_GINOT_configs()
 
     filebase = configs_geo_from_pc["filebase"]
     trunk_args = configs_geo_from_pc["trunk_args"]

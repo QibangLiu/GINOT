@@ -186,7 +186,6 @@ def LoadDataPoissionGeo(struct=True, test_size=0.2, seed=42):
         xyt = pad_sequence(nodes, batch_first=True,
                            padding_value=PADDING_VALUE)
 
-
     train_pc, test_pc, train_xyt, test_xyt, train_u, test_u, train_idx, test_idx = train_test_split(
         points_cloud, xyt, solutions, torch.arange(0, len(xyt)), test_size=test_size, random_state=seed)
 
@@ -358,10 +357,10 @@ def shape_car_geo_from_pc_configs():
 
 # =============================================================================
 # %%
-# ========================microstruc           ================================
+# ========================microstruc Unit Cell ================================
 def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, padding_value=PADDING_VALUE):
-    # folder_path = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/pc_fieldoutput_11fram/dataset_0-10000_12-92"
-    data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel_new/node_pc_mises_disp_laststep_aug.pkl"
+    # data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel_new/node_pc_mises_disp_laststep_aug.pkl"
+    data_file = f"{DATA_FILEBASE}/microstruc/laststep/node_pc_mises_disp_laststep_aug.pkl"
     with open(os.path.join(data_file), "rb") as f:
         mises_disp_data = pickle.load(f)
         SU_raw = mises_disp_data['mises_disp']
@@ -369,13 +368,11 @@ def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, padd
         su_scaler = mises_disp_data['scaler']
         coords = mises_disp_data['mesh_coords']
         point_cloud = mises_disp_data['points_cloud']
-    mesh_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/pc_fieldoutput_11fram/dataset_0-10000_12-92/mesh_pc.pkl"
+    # mesh_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/pc_fieldoutput_11fram/dataset_0-10000_12-92/mesh_pc.pkl"
+    mesh_file = f"{DATA_FILEBASE}/microstruc/mesh_pc.pkl"
     with open(os.path.join(mesh_file), "rb") as f:
         data_mesh = pickle.load(f)
-        # coords = data_mesh['mesh_coords']
         cells = data_mesh['mesh_connect']
-        # point_cloud = data_mesh['point_cloud']
-        # sample_ids = data_mesh['valid_sample_ids']
 
     SU = [torch.tensor((su-su_shift)/su_scaler) for su in SU_raw]  # (Nb, N, 3)
     su_shift = torch.tensor(su_shift)[None, :]  # (1,1,3)
@@ -428,7 +425,7 @@ def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, padd
     return train_dataloader, test_dataloader, cells, su_inverse
 
 
-def microstru_geo_from_pc_configs():
+def microstruc_GINOT_configs():
     fps_method = "fps"
     out_c = 128
     dropout = 0.0
@@ -450,7 +447,7 @@ def microstru_geo_from_pc_configs():
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 4, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/micro_laststep_geo_from_pc_test5"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/microstruc_laststep_GINOT"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
@@ -532,6 +529,7 @@ def LoadDataJEBGeo(bs_train=32, bs_test=128, test_size=0.05, seed=42, padding_va
                                   collate_fn=pad_collate_fn)
     test_dataloader = DataLoader(test_dataset, batch_size=bs_test, shuffle=False,
                                  collate_fn=pad_collate_fn)
+
     def SigmaInverse(x):
         return x*sigma_scale+sigma_shift
     s_inverse = SigmaInverse
@@ -551,7 +549,7 @@ def LoadDataJEBGeo(bs_train=32, bs_test=128, test_size=0.05, seed=42, padding_va
     return train_dataloader, test_dataloader, cells, s_inverse, pc_inverse, vert_inverse
 
 
-def JEB_geo_configs():
+def JEB_GINOT_configs():
     fps_method = "fps"
     out_c = 128
     dropout = 0.0

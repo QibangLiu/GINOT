@@ -28,7 +28,7 @@ html_names = {"train_50percentile": "./html_plots/train_50percentile.html",
 #               "train_worst": None,
 #               "test_20percentile": None, }
 # %%
-configs_jeb = configs.JEB_geo_configs()
+configs_jeb = configs.JEB_GINOT_configs()
 
 filebase = configs_jeb["filebase"]
 trunk_args = configs_jeb["trunk_args"]

@@ -230,12 +230,12 @@ if __name__ == "__main__":
     args, unknown = parser.parse_known_args()
     print(vars(args))
 
-    configs_geo_from_pc = configs.microstruc_GINOT_configs()
+    configs_ginot = configs.microstruc_GINOT_configs()
 
-    filebase = configs_geo_from_pc["filebase"]
-    trunk_args = configs_geo_from_pc["trunk_args"]
-    branch_args = configs_geo_from_pc["branch_args"]
-    print(configs_geo_from_pc)
+    filebase = configs_ginot["filebase"]
+    trunk_args = configs_ginot["trunk_args"]
+    branch_args = configs_ginot["branch_args"]
+    print(configs_ginot)
 
     NTO_model = NOTModelDefinition(branch_args, trunk_args)
 

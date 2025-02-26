@@ -6,7 +6,7 @@ National Center for Supercomputing Applications,
 University of Illinois at Urbana-Champaign
 Created: 2025-01-15
 
-Based on https://github.com/openai/shap-e/blob/main/shap_e/models/nn/ops.py
+Modified based on https://github.com/openai/shap-e/blob/main/shap_e/models/nn/ops.py
 
 """
 

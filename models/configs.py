@@ -20,11 +20,9 @@ import time
 SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 
 DATA_FILEBASE = f"{SCRIPT_PATH}/../data"
-DATA_FILE = f"{DATA_FILEBASE}/node_pc_mises_disp_laststep_aug.pkl"
 
 
 PADDING_VALUE = -1000
-NUM_POINT_POINTNET2 = 128
 
 # %%
 
@@ -179,76 +177,6 @@ def elasticity_GINOT_configs():
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
-
-# %%
-# ==================================ShapeCar====================================
-
-
-def LoadDataShapeCarGeo():
-    data_file = f"{DATA_FILEBASE}/shapeNet-car/pc_pressure_data.npz"
-    data = np.load(data_file)
-    points_cloud = data['points_cloud'].astype(np.float32)
-    nodes = points_cloud.copy()
-    # shuffle the points in the point cloud
-    for pc in points_cloud:
-        np.random.shuffle(pc)
-    pressures = data['pressures'].astype(np.float32)
-
-    points_cloud = torch.tensor(points_cloud)
-    nodes = torch.tensor(nodes)
-    p_shift, p_scale = np.mean(pressures), np.std(pressures)
-    p_norm = (pressures-p_shift)/p_scale
-    pressures = torch.tensor(p_norm)
-
-    # num_train = 500
-    # num_test = 111
-    # train_pc = points_cloud[:num_train]
-    # train_xyt = nodes[:num_train]
-    # train_u = pressures[:num_train]
-    # test_pc = points_cloud[-num_test:]
-    # test_xyt = nodes[-num_test:]
-    # test_u = pressures[-num_test:]
-    train_pc, test_pc, train_xyt, test_xyt, train_u, test_u = train_test_split(
-        points_cloud, nodes, pressures, test_size=0.18, random_state=42)
-
-    train_dataset = TensorDataset(
-        train_pc, train_xyt, train_u)
-    test_dataset = TensorDataset(test_pc, test_xyt, test_u)
-
-    def PressureInverse(x):
-        return x*p_scale+p_shift
-    p_inverse = PressureInverse
-
-    return train_dataset, test_dataset, p_inverse
-
-
-def shape_car_geo_from_pc_configs():
-
-    fps_method = "first"
-    out_c = 32
-    dropout = 0.1
-    geo_encoder_model_args = {
-        "input_channels": 3,
-        "out_c": out_c,
-        "latent_d": 32,
-        "width": 32,
-        "n_point": 512,
-        "n_sample": 256,
-        "radius": 0.4,
-        "d_hidden": [64, 64],
-        "num_heads": 4,
-        "cross_attn_layers": 1,
-        "self_attn_layers": 2,
-        "fps_method": fps_method,
-        "dropout": dropout
-    }
-    trunc_model_args = {"embed_dim": out_c,
-                        "cross_attn_layers": 3, "dropout": dropout}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/shape-car_geo_from_pc_test"
-    args_all = {"branch_args": geo_encoder_model_args,
-                "trunk_args": trunc_model_args, "filebase": NTO_filebase}
-    return args_all
-
 
 # =============================================================================
 # %%
@@ -467,6 +395,7 @@ def JEB_GINOT_configs():
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
     NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_geo_from_pc_test4"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all

@@ -39,13 +39,13 @@ class ResidualCrossAttentionBlock(nn.Module):
         self.ln_3 = nn.LayerNorm(width)
         self.dropout = nn.Dropout(dropout)  # Dropout for MLP output
 
-    def forward(self, x: torch.Tensor, data: torch.Tensor,
+    def forward(self, q: torch.Tensor, kv: torch.Tensor,
                 key_padding_mask: Optional[torch.Tensor] = None):
-        q = self.ln_1(x)
-        kv = self.ln_2(data)
-        x = x + self.attn(q, kv, kv, key_padding_mask)[0]
-        x = x + self.dropout(self.mlp(self.ln_3(x)))
-        return x
+        q = self.ln_1(q)
+        kv = self.ln_2(kv)
+        q = q + self.attn(q, kv, kv, key_padding_mask)[0]
+        q = q + self.dropout(self.mlp(self.ln_3(q)))
+        return q
 
 
 class ResidualAttentionBlock(nn.Module):
@@ -98,3 +98,36 @@ class SelfAttentionBlocks(nn.Module):
         for block in self.resblocks:
             x = block(x, key_padding_mask)
         return x
+
+
+class CrossAttentionBlocks(nn.Module):
+    """
+    Only does cross attention
+    """
+
+    def __init__(
+        self,
+        *,
+        width: int,
+        heads: int,
+        layers: int,
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        self.width = width
+        self.layers = layers
+        self.resblocks = nn.ModuleList(
+            [
+                ResidualCrossAttentionBlock(
+                    width=width,
+                    heads=heads,
+                    dropout=dropout,
+                )
+                for _ in range(layers)
+            ]
+        )
+
+    def forward(self, q: torch.Tensor, kv: torch.Tensor, key_padding_mask: Optional[torch.Tensor] = None):
+        for block in self.resblocks:
+            q = block(q, kv, key_padding_mask=key_padding_mask)
+        return q

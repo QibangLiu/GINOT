@@ -19,7 +19,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from .transformer import ResidualCrossAttentionBlock, SelfAttentionBlocks
+from .transformer import CrossAttentionBlocks, SelfAttentionBlocks
 from . import pointnet2_utils as pnet
 from .point_position_embedding import PosEmbLinear
 import warnings
@@ -178,39 +178,6 @@ class PointSetEmbedding(nn.Module):
         return conv(points)
 
 
-class SimplePerceiver(nn.Module):
-    """
-    Only does cross attention
-    """
-
-    def __init__(
-        self,
-        *,
-        width: int,
-        heads: int,
-        layers: int,
-        dropout: float = 0.0,
-    ):
-        super().__init__()
-        self.width = width
-        self.layers = layers
-        self.resblocks = nn.ModuleList(
-            [
-                ResidualCrossAttentionBlock(
-                    width=width,
-                    heads=heads,
-                    dropout=dropout,
-                )
-                for _ in range(layers)
-            ]
-        )
-
-    def forward(self, x: torch.Tensor, data: torch.Tensor, key_padding_mask: Optional[torch.Tensor] = None):
-        for block in self.resblocks:
-            x = block(x, data, key_padding_mask=key_padding_mask)
-        return x
-
-
 class PointCloudPerceiverChannelsEncoder(nn.Module):
     """
     Encode point clouds using a transformer model with an extra output
@@ -279,9 +246,9 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         self.ln_pre = nn.LayerNorm(self.width)
         self.ln_post = nn.LayerNorm(self.width)
 
-        self.encoder = SimplePerceiver(
+        self.cross_att = CrossAttentionBlocks(
             width=self.width, heads=num_heads, layers=cross_attn_layers, dropout=dropout)
-        self.processor = SelfAttentionBlocks(
+        self.self_att = SelfAttentionBlocks(
             width=self.width, heads=num_heads, layers=self_attn_layers, dropout=dropout)
         self.output_proj = nn.Linear(
             self.width, self.out_c)
@@ -343,9 +310,9 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
             h = self.ln_pre(data_tokens)
         # [B, Nnl, width] -> [B,  Nnl, width], Nnl=n_point+latent_d or n_point
         # cross_attn. TODO: add mask here, dataset_emb has padding points
-        h = self.encoder(h, dataset_emb, key_padding_mask=pading_mask)
+        h = self.cross_att(h, dataset_emb, key_padding_mask=pading_mask)
         # [B,  Nnl, width]-> [B,  Nnl, width]
-        h = self.processor(h)
+        h = self.self_att(h)
         # [B,  Nnl, width] -> [B, latent_d, width]
         # -> [B, latent_d, out_c]
         if self.latent_d is not None:

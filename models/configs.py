@@ -279,7 +279,7 @@ def microstruc_GINOT_configs():
 # ========================GE Jet Engine Bracket================================
 
 
-def LoadDataJEBGeo(bs_train=32, bs_test=128, test_size=0.05, seed=42, padding_value=PADDING_VALUE, shuffle_loader=True):
+def LoadDataJEBGeo(bs_train=32, bs_test=128, test_size=0.1, seed=42, padding_value=PADDING_VALUE, shuffle_loader=True):
     start = time.time()
     # load data
     data_file = f"{DATA_FILEBASE}/GEJetEngineBracket/GE-JEB.pkl"
@@ -394,8 +394,8 @@ def JEB_GINOT_configs():
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT"
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_geo_from_pc_test4"
+    # NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT_10percentTest"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all

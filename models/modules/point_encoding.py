@@ -177,7 +177,6 @@ class PointSetEmbedding(nn.Module):
                 points, 2, torch.broadcast_to(indices, points.shape))
         return conv(points)
 
-
 class PointCloudPerceiverChannelsEncoder(nn.Module):
     """
     Encode point clouds using a transformer model with an extra output
@@ -246,9 +245,9 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         self.ln_pre = nn.LayerNorm(self.width)
         self.ln_post = nn.LayerNorm(self.width)
 
-        self.cross_att = CrossAttentionBlocks(
+        self.encoder = CrossAttentionBlocks(
             width=self.width, heads=num_heads, layers=cross_attn_layers, dropout=dropout)
-        self.self_att = SelfAttentionBlocks(
+        self.processor = SelfAttentionBlocks(
             width=self.width, heads=num_heads, layers=self_attn_layers, dropout=dropout)
         self.output_proj = nn.Linear(
             self.width, self.out_c)
@@ -310,9 +309,9 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
             h = self.ln_pre(data_tokens)
         # [B, Nnl, width] -> [B,  Nnl, width], Nnl=n_point+latent_d or n_point
         # cross_attn. TODO: add mask here, dataset_emb has padding points
-        h = self.cross_att(h, dataset_emb, key_padding_mask=pading_mask)
+        h = self.encoder(h, dataset_emb, key_padding_mask=pading_mask)
         # [B,  Nnl, width]-> [B,  Nnl, width]
-        h = self.self_att(h)
+        h = self.processor(h)
         # [B,  Nnl, width] -> [B, latent_d, width]
         # -> [B, latent_d, out_c]
         if self.latent_d is not None:

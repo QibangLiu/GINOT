@@ -39,13 +39,13 @@ class ResidualCrossAttentionBlock(nn.Module):
         self.ln_3 = nn.LayerNorm(width)
         self.dropout = nn.Dropout(dropout)  # Dropout for MLP output
 
-    def forward(self, q: torch.Tensor, kv: torch.Tensor,
+    def forward(self, x: torch.Tensor, kv: torch.Tensor,
                 key_padding_mask: Optional[torch.Tensor] = None):
-        q = self.ln_1(q)
+        q = self.ln_1(x)
         kv = self.ln_2(kv)
-        q = q + self.attn(q, kv, kv, key_padding_mask)[0]
-        q = q + self.dropout(self.mlp(self.ln_3(q)))
-        return q
+        x = x + self.attn(q, kv, kv, key_padding_mask)[0]
+        x = x + self.dropout(self.mlp(self.ln_3(x)))
+        return x
 
 
 class ResidualAttentionBlock(nn.Module):

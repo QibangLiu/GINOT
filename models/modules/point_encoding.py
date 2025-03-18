@@ -165,11 +165,11 @@ class PointSetEmbedding(nn.Module):
     def apply_conv(self, points: torch.Tensor, conv: nn.Module):
         batch, channels, n_samples, _ = points.shape
         # Shuffle the representations
-        if self.patch_size > 1:
-            # TODO shuffle deterministically when not self.training
+        if self.patch_size > 1 and self.training:
+            # QB: TODO: shuffle deterministically when not self.training
             """
             QB: 2025-01-24
-            this part seems has no effect, since a mean pooling is applied after that
+            make sure no shuffle when not inference (self.training)
             """
             _, indices = torch.rand(
                 batch, channels, n_samples, 1, device=points.device).sort(dim=2)

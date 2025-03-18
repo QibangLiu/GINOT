@@ -182,20 +182,38 @@ def elasticity_GINOT_configs():
 # %%
 # ========================microstruc Unit Cell ================================
 def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, padding_value=PADDING_VALUE):
-    # data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel_new/node_pc_mises_disp_laststep_aug.pkl"
-    data_file = f"{DATA_FILEBASE}/microstruc/laststep/node_pc_mises_disp_laststep_aug.pkl"
-    with open(os.path.join(data_file), "rb") as f:
-        mises_disp_data = pickle.load(f)
-        SU_raw = mises_disp_data['mises_disp']
-        su_shift = mises_disp_data['shift']
-        su_scaler = mises_disp_data['scaler']
-        coords = mises_disp_data['mesh_coords']
-        point_cloud = mises_disp_data['points_cloud']
-    # mesh_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/pc_fieldoutput_11fram/dataset_0-10000_12-92/mesh_pc.pkl"
-    mesh_file = f"{DATA_FILEBASE}/microstruc/mesh_pc.pkl"
-    with open(os.path.join(mesh_file), "rb") as f:
-        data_mesh = pickle.load(f)
-        cells = data_mesh['mesh_connect']
+    su_file = f"{DATA_FILEBASE}/PeriodUnitCell/mises_disp_laststep.pkl"
+    with open(su_file, "rb") as f:
+        su_data = pickle.load(f)
+        SU_raw = su_data['mises_disp']
+        su_shift = su_data['shift']
+        su_scaler = su_data['scaler']
+
+    pc_file = f"{DATA_FILEBASE}/PeriodUnitCell/points_cloud.pkl"
+    with open(pc_file, "rb") as f:
+        point_cloud = pickle.load(f)
+
+    node_file = f"{DATA_FILEBASE}/PeriodUnitCell/mesh_coords.pkl"
+    with open(node_file, "rb") as f:
+        coords = pickle.load(f)
+
+    mesh_file = f"{DATA_FILEBASE}/PeriodUnitCell/mesh_cells10K.pkl"
+    with open(mesh_file, "rb") as f:
+        cells = pickle.load(f)
+
+    # data_file = f"{DATA_FILEBASE}/microstruc/laststep/node_pc_mises_disp_laststep_aug.pkl"
+    # with open(os.path.join(data_file), "rb") as f:
+    #     mises_disp_data = pickle.load(f)
+    #     SU_raw = mises_disp_data['mises_disp']
+    #     su_shift = mises_disp_data['shift']
+    #     su_scaler = mises_disp_data['scaler']
+    #     coords = mises_disp_data['mesh_coords']
+    #     point_cloud = mises_disp_data['points_cloud']
+    # # mesh_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/pc_fieldoutput_11fram/dataset_0-10000_12-92/mesh_pc.pkl"
+    # mesh_file = f"{DATA_FILEBASE}/microstruc/mesh_pc.pkl"
+    # with open(os.path.join(mesh_file), "rb") as f:
+    #     data_mesh = pickle.load(f)
+    #     cells = data_mesh['mesh_connect']
 
     SU = [torch.tensor((su-su_shift)/su_scaler) for su in SU_raw]  # (Nb, N, 3)
     su_shift = torch.tensor(su_shift)[None, :]  # (1,1,3)

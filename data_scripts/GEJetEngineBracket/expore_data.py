@@ -5,7 +5,7 @@ Instructions:
     VolumeMesh and FieldMesh can be downloaded from the following link:
     https://drive.google.com/drive/u/0/folders/10ccsas7TfD7nIan-Ll5y9vbx4-tSqEyJ
 -- Important Notes:
-** Do not use the SurfaceMesh.
+** Do not use the FieldMesh for mesh.
     The point, cell, and face data in the FieldMesh should not be used.
     As of February 8, 2025, there is a mismatch between the corresponding nodes in cells and fields due to the removal of the 5 loading points.
 ** Recommended Approach:

@@ -9,3 +9,6 @@ __pycache__/
 *.slurm
 MyJob.*
 data/*
+
+Param_DeepONet_LUG/
+PLASTIC_LUG_PARAM_VAR_THICK/

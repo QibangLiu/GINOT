@@ -75,7 +75,7 @@ class PointSetEmbedding(nn.Module):
         d_hidden: List[int],
         patch_size: int = 1,
         stride: int = 1,
-        activation: Optional[Union[str, nn.Module]] = nn.SiLU(),
+        activation: Optional[Union[str, nn.Module]] = "swish",
         group_all: bool = False,
         padding_mode: str = "zeros",
         fps_method: str = "first",
@@ -88,7 +88,7 @@ class PointSetEmbedding(nn.Module):
         self.n_point = n_point
         self.radius = radius
         self.n_sample = n_sample
-        self.mlp_channel = nn.ModuleList()
+        self.mlp_convs = nn.ModuleList()
         if isinstance(activation, str):
           self.act = get_act(activation)
         else:
@@ -97,30 +97,18 @@ class PointSetEmbedding(nn.Module):
         self.stride = stride
         last_channel = d_input + ndim
         for out_channel in d_hidden:
-            self.mlp_channel.append(nn.Linear(last_channel, out_channel))
-            self.mlp_channel.append(self.act)
-            # self.mlp_convs.append(
-            #     nn.Conv2d(
-            #         last_channel,
-            #         out_channel,
-            #         kernel_size=(patch_size, 1),
-            #         stride=(stride, 1),
-            #         padding=(patch_size // 2, 0),
-            #         padding_mode=padding_mode,
-            #         **kwargs,
-            #     )
-            # )
+            self.mlp_convs.append(
+                nn.Conv2d(
+                    last_channel,
+                    out_channel,
+                    kernel_size=(patch_size, 1),
+                    stride=(stride, 1),
+                    padding=(patch_size // 2, 0),
+                    padding_mode=padding_mode,
+                    **kwargs,
+                )
+            )
             last_channel = out_channel
-
-        self.mlp_weight_sum = nn.Sequential(
-            nn.Linear(n_sample, n_sample*4),
-            self.act,
-            nn.Linear(n_sample*4, n_sample),
-            self.act,
-            nn.Linear(n_sample, 1),
-            self.act
-        )
-
         self.group_all = group_all
         self.fps_method = fps_method
         # clear the cache
@@ -166,37 +154,28 @@ class PointSetEmbedding(nn.Module):
             )
         # new_xyz: sampled points position data, [B, n_point, C]
         # new_points: sampled points data, [B, n_point, n_sample, C+D]
-        for layer in self.mlp_channel:
-            # [B, n_point, n_sample, d_hidden[-1]]
-            new_points = layer(new_points)
-
-        # [B, d_hidden[-1], n_point, n_sample]
-        new_points = new_points.permute(0, 3, 1, 2)
-        # [B,d_hidden[-1],n_point,n_sample]->[B,d_hidden[-1],n_point,1]
-        new_points = self.mlp_weight_sum(new_points)
-        new_points = new_points.squeeze(-1)
-
         # [B, C+D, n_sample, n_point]
-        # new_points = new_points.permute(0, 3, 2, 1)
-        # for i, conv in enumerate(self.mlp_convs):
-        #     new_points = self.act(self.apply_conv(new_points, conv))
-        # new_points = new_points.mean(dim=2)
+        new_points = new_points.permute(0, 3, 2, 1)
+        for i, conv in enumerate(self.mlp_convs):
+            new_points = self.act(self.apply_conv(new_points, conv))
+
+        new_points = new_points.mean(dim=2)
         return new_points
 
-    # def apply_conv(self, points: torch.Tensor, conv: nn.Module):
-    #     batch, channels, n_samples, _ = points.shape
-    #     # Shuffle the representations
-    #     if self.patch_size > 1 and self.training:
-    #         # QB: TODO: shuffle deterministically when not self.training
-    #         """
-    #         QB: 2025-01-24
-    #         make sure no shuffle when not inference (self.training)
-    #         """
-    #         _, indices = torch.rand(
-    #             batch, channels, n_samples, 1, device=points.device).sort(dim=2)
-    #         points = torch.gather(
-    #             points, 2, torch.broadcast_to(indices, points.shape))
-    #     return conv(points)
+    def apply_conv(self, points: torch.Tensor, conv: nn.Module):
+        batch, channels, n_samples, _ = points.shape
+        # Shuffle the representations
+        if self.patch_size > 1 and self.training:
+            # QB: TODO: shuffle deterministically when not self.training
+            """
+            QB: 2025-01-24
+            make sure no shuffle when not inference (self.training)
+            """
+            _, indices = torch.rand(
+                batch, channels, n_samples, 1, device=points.device).sort(dim=2)
+            points = torch.gather(
+                points, 2, torch.broadcast_to(indices, points.shape))
+        return conv(points)
 
 class PointCloudPerceiverChannelsEncoder(nn.Module):
     """
@@ -241,7 +220,6 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         """
         self.width = width
         self.latent_d = latent_d
-        self.latent_d = None
         self.n_point = n_point
         self.out_c = out_c
         self.pc_padding_val = pc_padding_val
@@ -267,9 +245,9 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         self.ln_pre = nn.LayerNorm(self.width)
         self.ln_post = nn.LayerNorm(self.width)
 
-        self.cros_att = CrossAttentionBlocks(
+        self.encoder = CrossAttentionBlocks(
             width=self.width, heads=num_heads, layers=cross_attn_layers, dropout=dropout)
-        self.self_att = SelfAttentionBlocks(
+        self.processor = SelfAttentionBlocks(
             width=self.width, heads=num_heads, layers=self_attn_layers, dropout=dropout)
         self.output_proj = nn.Linear(
             self.width, self.out_c)
@@ -331,9 +309,9 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
             h = self.ln_pre(data_tokens)
         # [B, Nnl, width] -> [B,  Nnl, width], Nnl=n_point+latent_d or n_point
         # cross_attn. TODO: add mask here, dataset_emb has padding points
-        h = self.cros_att(h, dataset_emb, key_padding_mask=pading_mask)
+        h = self.encoder(h, dataset_emb, key_padding_mask=pading_mask)
         # [B,  Nnl, width]-> [B,  Nnl, width]
-        h = self.self_att(h)
+        h = self.processor(h)
         # [B,  Nnl, width] -> [B, latent_d, width]
         # -> [B, latent_d, out_c]
         if self.latent_d is not None:

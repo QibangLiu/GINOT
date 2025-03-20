@@ -91,9 +91,9 @@ def LoadDataPoissonGeo(struct=True, test_size=0.2, seed=42):
 def poisson_GINOT_configs(struct=True):
 
     if struct:
-        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_ginot_struct_msh_ldNone"
+        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poisson_ginotv2_struct_msh"
     else:
-        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poission_ginot_unstruct_msh_ldNone"
+        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poisson_ginotv2_unstruct_msh"
 
     fps_method = "fps"
     out_c = 64
@@ -173,7 +173,7 @@ def elasticity_GINOT_configs():
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 6}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/elasticity_ginot"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/elasticity_ginotv2"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
@@ -181,13 +181,30 @@ def elasticity_GINOT_configs():
 # =============================================================================
 # %%
 # ========================microstruc Unit Cell ================================
-def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, padding_value=PADDING_VALUE):
-    su_file = f"{DATA_FILEBASE}/PeriodUnitCell/mises_disp_laststep.pkl"
-    with open(su_file, "rb") as f:
-        su_data = pickle.load(f)
-        SU_raw = su_data['mises_disp']
-        su_shift = su_data['shift']
-        su_scaler = su_data['scaler']
+
+
+def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, num_frames=1, padding_value=PADDING_VALUE):
+    start = time.time()
+    if num_frames == 1:
+        """load the last frame data"""
+        su_file = f"{DATA_FILEBASE}/PeriodUnitCell/mises_disp_laststep.pkl"
+        with open(su_file, "rb") as f:
+            su_data = pickle.load(f)
+            SU_raw = su_data['mises_disp']
+            su_shift = su_data['shift']
+            su_scaler = su_data['scaler']
+    elif num_frames == 11 or num_frames == 26:
+        """load the 11 frames data or 26 frames data"""
+        scaler_file = f"{DATA_FILEBASE}/PeriodUnitCell/SU_scalers_{num_frames}fram.npz"
+        su_scalers = np.load(scaler_file)
+        su_shift, su_scaler = su_scalers["global_shift"], su_scalers["global_scale"]
+        SU_file = f"{DATA_FILEBASE}/PeriodUnitCell/mises_disp{num_frames}fram.pkl"
+        with open(SU_file, "rb") as f:
+            SU_raw = pickle.load(f)
+
+    else:
+        raise ValueError("num_frames must be 1, 11 or 26")
+
 
     pc_file = f"{DATA_FILEBASE}/PeriodUnitCell/points_cloud.pkl"
     with open(pc_file, "rb") as f:
@@ -215,9 +232,10 @@ def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, padd
     #     data_mesh = pickle.load(f)
     #     cells = data_mesh['mesh_connect']
 
-    SU = [torch.tensor((su-su_shift)/su_scaler) for su in SU_raw]  # (Nb, N, 3)
-    su_shift = torch.tensor(su_shift)[None, :]  # (1,1,3)
-    su_scaler = torch.tensor(su_scaler)[None, :]  # (1, 1, 3)
+    SU = [torch.tensor((su-su_shift)/su_scaler)
+          for su in SU_raw]  # (Nb, N, 3) or (Nb,N,Nt,3 )
+    su_shift = torch.tensor(su_shift)[None, :]  # (1,1,3) or (1,1,1,3)
+    su_scaler = torch.tensor(su_scaler)[None, :]  # (1, 1, 3) or (1, 1, 1, 3)
     xyt = [torch.tensor(x[:, :2]) for x in coords]  # (Nb, N, 2)
     point_cloud = [torch.tensor(x[:, :2])
                    for x in point_cloud]  # (Nb,N,3)->(Nb, N, 2)
@@ -261,8 +279,8 @@ def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, padd
         su_sig = su_scaler.to(x.device)
         su_mu = su_shift.to(x.device)
         return x*su_sig+su_mu
-
     su_inverse = SUInverse
+    print(f"Data loading time: {time.time()-start:.2f} s")
     return train_dataloader, test_dataloader, cells, su_inverse
 
 
@@ -288,7 +306,36 @@ def microstruc_GINOT_configs():
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 4, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/microstruc_laststep_GINOT"
+    # NTO_filebase = f"{SCRIPT_PATH}/saved_weights/microstruc_laststep_GINOT"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/microstruc_laststep_GINOT_newencoder"
+    args_all = {"branch_args": geo_encoder_model_args,
+                "trunk_args": trunc_model_args, "filebase": NTO_filebase}
+    return args_all
+
+
+def microstruc_multiFrames_GINOT_configs(num_frames=26):
+    fps_method = "fps"
+    out_c = 128
+    dropout = 0.0
+    geo_encoder_model_args = {
+        "input_channels": 2,
+        "out_c": out_c,
+        "latent_d": None,
+        "width": 128,
+        "n_point": 128,
+        "n_sample": 8,
+        "radius": 0.2,
+        "d_hidden": [128, 128],
+        "num_heads": 4,
+        "cross_attn_layers": 2,
+        "self_attn_layers": 2,
+        "fps_method": fps_method,
+        "pc_padding_val": PADDING_VALUE,
+        "dropout": dropout,
+    }
+    trunc_model_args = {"embed_dim": out_c,
+                        "cross_attn_layers": 4, "num_heads": 8, "num_frames": num_frames, "dropout": dropout, "padding_value": PADDING_VALUE}
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/microstruc_{num_frames}frames_GINOT"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
@@ -413,10 +460,151 @@ def JEB_GINOT_configs():
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
     # NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT"
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT_10percentTest"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOTv2_10percentTest"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
 
 # =============================================================================
 # %%
+# ======================Plastic LUG============================
+
+
+def LoadDataLUGGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, padding_value=PADDING_VALUE, shuffle_loader=True):
+    start = time.time()
+    # load loading data
+    input_par_file = f"{DATA_FILEBASE}/PLASTIC_LUG/input_params.npy"
+    inp_para = np.load(input_par_file)
+    loading = inp_para[:, 3].astype(np.float32)
+    loading = (loading-loading.mean())/loading.std()
+    loading = torch.tensor(loading).view(-1, 1)
+    # load cells
+    cells_file = f"{DATA_FILEBASE}/PLASTIC_LUG/LUG_cells.pkl"
+    with open(cells_file, "rb") as f:
+        cells = pickle.load(f)
+    # load data
+    data_file = f"{DATA_FILEBASE}/PLASTIC_LUG/LUG_node_S_PC.pkl"
+    with open(data_file, "rb") as f:
+        data = pickle.load(f)
+    vertices = data['vertices']
+    nodal_stress = data['nodal_stress']
+    points_cloud = data['points_cloud']
+    # normalize data
+    vert_concat = np.concatenate(vertices, axis=0, dtype=np.float32)
+    vert_shift, vert_scale = np.mean(
+        vert_concat, axis=0), np.std(vert_concat, axis=0)
+    vert_shift = vert_shift[None, :]  # (1,3)
+    vert_scale = vert_scale[None, :]
+
+    pc_concat = np.concatenate(points_cloud, axis=0, dtype=np.float32)
+    pc_shift, pc_scale = np.mean(pc_concat, axis=0), np.std(pc_concat, axis=0)
+    pc_shift = pc_shift[None, :]
+    pc_scale = pc_scale[None, :]
+
+    sigma_concat = np.concatenate(nodal_stress, axis=0, dtype=np.float32)
+    sigma_shift, sigma_scale = np.mean(
+        sigma_concat), np.std(sigma_concat)
+
+    vertices_norm = [torch.tensor(
+        (v.astype(np.float32)-vert_shift)/vert_scale) for v in vertices]
+    pc_norm = [torch.tensor((pc.astype(np.float32)-pc_shift)/pc_scale)
+               for pc in points_cloud]
+    sigma_norm = [torch.tensor((s.astype(np.float32)-sigma_shift)/sigma_scale)
+                  for s in nodal_stress]
+    pc_shift = torch.tensor(pc_shift)[None, :]
+    pc_scale = torch.tensor(pc_scale)[None, :]
+    vert_shift = torch.tensor(vert_shift)[None, :]  # (1, 1,3)
+    vert_scale = torch.tensor(vert_scale)[None, :]
+    # split test and train data
+    train_ids, test_ids = train_test_split(
+        np.arange(len(vertices)), test_size=test_size, random_state=seed)
+    train_loading = loading[train_ids]
+    test_loading = loading[test_ids]
+    train_pc = [pc_norm[i] for i in train_ids]
+    test_pc = [pc_norm[i] for i in test_ids]
+    train_xyt = [vertices_norm[i] for i in train_ids]
+    test_xyt = [vertices_norm[i] for i in test_ids]
+    train_S = [sigma_norm[i] for i in train_ids]
+    test_S = [sigma_norm[i] for i in test_ids]
+    # cells_test = [cells[i] for i in test_ids]
+    # cells_train = [cells[i] for i in train_ids]
+    train_dataset = ListDataset(
+        (train_loading, train_pc, train_xyt, train_S, torch.tensor(train_ids)))
+    test_dataset = ListDataset(
+        (test_loading, test_pc, test_xyt, test_S, torch.tensor(test_ids)))
+    # padded dataloader
+
+    def pad_collate_fn(batch):
+        loading = torch.stack([item[0] for item in batch])
+        pc_batch = [item[1] for item in batch]  # Extract pc (variable-length)
+        xyt_batch = [item[2]
+                     for item in batch]  # Extract xyt (variable-length)
+        S = [item[3] for item in batch]  # Extract S (variable-length)
+        sample_ids = torch.stack([item[4] for item in batch])
+        # y_batch = torch.stack([item[1] for item in batch])  # Extract and stack y (fixed-length)
+        # Pad sequences
+        pc_padded = pad_sequence(
+            pc_batch, batch_first=True, padding_value=padding_value)
+        xyt_padded = pad_sequence(
+            xyt_batch, batch_first=True, padding_value=padding_value)
+        S_padded = pad_sequence(S, batch_first=True,
+                                padding_value=padding_value)
+        return loading, pc_padded, xyt_padded, S_padded, sample_ids
+
+    train_dataloader = DataLoader(train_dataset, batch_size=bs_train, shuffle=shuffle_loader,
+                                  collate_fn=pad_collate_fn)
+    test_dataloader = DataLoader(test_dataset, batch_size=bs_test, shuffle=False,
+                                 collate_fn=pad_collate_fn)
+
+    def SigmaInverse(x):
+        return x*sigma_scale+sigma_shift
+    s_inverse = SigmaInverse
+
+    def PCInverse(x):
+        pc_scale_ = pc_scale.to(x.device)
+        pc_shift_ = pc_shift.to(x.device)
+        return x*pc_scale_+pc_shift_
+    pc_inverse = PCInverse
+
+    def VertInverse(x):
+        vert_scale_ = vert_scale.to(x.device)
+        vert_shift_ = vert_shift.to(x.device)
+        return x*vert_scale_+vert_shift_
+    vert_inverse = VertInverse
+    print(f"Data loading time: {time.time()-start:.2f} s")
+    return train_dataloader, test_dataloader, cells, s_inverse, pc_inverse, vert_inverse
+
+
+# %%
+a = LoadDataLUGGeo()
+
+# %%
+
+
+def LUG_GINOT_configs():
+    fps_method = "fps"
+    out_c = 128
+    dropout = 0.0
+    geo_encoder_model_args = {
+        "input_channels": 3,
+        "out_c": out_c,
+        "latent_d": None,
+        "width": 128,
+        "n_point": 512,
+        "n_sample": 64,
+        "radius": 0.5,
+        "d_hidden": [128, 128],
+        "num_heads": 8,
+        "cross_attn_layers": 1,
+        "self_attn_layers": 2,
+        "fps_method": fps_method,
+        "pc_padding_val": PADDING_VALUE,
+        "dropout": dropout,
+    }
+    trunc_model_args = {"embed_dim": out_c,
+                        "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
+    # NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/LUG_GINOT_test"
+    args_all = {"branch_args": geo_encoder_model_args,
+                "trunk_args": trunc_model_args, "filebase": NTO_filebase}
+    return args_all

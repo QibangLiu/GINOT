@@ -184,12 +184,12 @@ def TrainNOTModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, window_s
     checkpoint = torch_trainer.ModelCheckpoint(
         monitor="loss", save_best_only=True)
     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.7, patience=40)
+        optimizer, factor=0.7, patience=100)
     trainer.compile(
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
         checkpoint=checkpoint,
-        scheduler_metric_name="loss",
+        scheduler_metric_name="val_loss",
         window_size=window_size,
         sequence_idx=[1, 2],
     )

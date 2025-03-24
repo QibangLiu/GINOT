@@ -91,9 +91,9 @@ def LoadDataPoissonGeo(struct=True, test_size=0.2, seed=42):
 def poisson_GINOT_configs(struct=True):
 
     if struct:
-        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poisson_ginotv2_struct_msh"
+        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poisson_ginot_struct_msh"
     else:
-        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poisson_ginotv2_unstruct_msh"
+        NTO_filebase = f"{SCRIPT_PATH}/saved_weights/poisson_ginot_unstruct_msh"
 
     fps_method = "fps"
     out_c = 64
@@ -173,7 +173,7 @@ def elasticity_GINOT_configs():
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 6}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/elasticity_ginotv2"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/elasticity_GINOT"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
@@ -183,8 +183,17 @@ def elasticity_GINOT_configs():
 # ========================microstruc Unit Cell ================================
 
 
-def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, num_frames=1, padding_value=PADDING_VALUE):
+def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, num_frames=1, load_cells="NO", padding_value=PADDING_VALUE):
     start = time.time()
+    if load_cells != "NO":
+        mesh_file = f"{DATA_FILEBASE}/PeriodUnitCell/mesh_cells10K.pkl"
+        with open(mesh_file, "rb") as f:
+            cells = pickle.load(f)
+        if load_cells == "ONLY":
+            return cells
+    elif load_cells == "NO":
+        cells = "Nothing"
+
     if num_frames == 1:
         """load the last frame data"""
         su_file = f"{DATA_FILEBASE}/PeriodUnitCell/mises_disp_laststep.pkl"
@@ -214,9 +223,7 @@ def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, num_
     with open(node_file, "rb") as f:
         coords = pickle.load(f)
 
-    mesh_file = f"{DATA_FILEBASE}/PeriodUnitCell/mesh_cells10K.pkl"
-    with open(mesh_file, "rb") as f:
-        cells = pickle.load(f)
+
 
     # data_file = f"{DATA_FILEBASE}/microstruc/laststep/node_pc_mises_disp_laststep_aug.pkl"
     # with open(os.path.join(data_file), "rb") as f:
@@ -307,7 +314,7 @@ def microstruc_GINOT_configs():
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 4, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
     # NTO_filebase = f"{SCRIPT_PATH}/saved_weights/microstruc_laststep_GINOT"
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/microstruc_laststep_GINOT_newencoder"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/microstruc_laststep_GINOT"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
@@ -460,7 +467,7 @@ def JEB_GINOT_configs():
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
     # NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT"
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOTv2_10percentTest"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOTv2_10percentTest_multisteptrain"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
@@ -575,8 +582,6 @@ def LoadDataLUGGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, padding_val
     return train_dataloader, test_dataloader, cells, s_inverse, pc_inverse, vert_inverse
 
 
-# %%
-a = LoadDataLUGGeo()
 
 # %%
 

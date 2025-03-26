@@ -223,22 +223,6 @@ def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, num_
     with open(node_file, "rb") as f:
         coords = pickle.load(f)
 
-
-
-    # data_file = f"{DATA_FILEBASE}/microstruc/laststep/node_pc_mises_disp_laststep_aug.pkl"
-    # with open(os.path.join(data_file), "rb") as f:
-    #     mises_disp_data = pickle.load(f)
-    #     SU_raw = mises_disp_data['mises_disp']
-    #     su_shift = mises_disp_data['shift']
-    #     su_scaler = mises_disp_data['scaler']
-    #     coords = mises_disp_data['mesh_coords']
-    #     point_cloud = mises_disp_data['points_cloud']
-    # # mesh_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/pc_fieldoutput_11fram/dataset_0-10000_12-92/mesh_pc.pkl"
-    # mesh_file = f"{DATA_FILEBASE}/microstruc/mesh_pc.pkl"
-    # with open(os.path.join(mesh_file), "rb") as f:
-    #     data_mesh = pickle.load(f)
-    #     cells = data_mesh['mesh_connect']
-
     SU = [torch.tensor((su-su_shift)/su_scaler)
           for su in SU_raw]  # (Nb, N, 3) or (Nb,N,Nt,3 )
     su_shift = torch.tensor(su_shift)[None, :]  # (1,1,3) or (1,1,1,3)
@@ -313,7 +297,6 @@ def microstruc_GINOT_configs():
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 4, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
-    # NTO_filebase = f"{SCRIPT_PATH}/saved_weights/microstruc_laststep_GINOT"
     NTO_filebase = f"{SCRIPT_PATH}/saved_weights/microstruc_laststep_GINOT"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
@@ -466,8 +449,7 @@ def JEB_GINOT_configs():
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
-    # NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT"
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOTv2_10percentTest_multisteptrain"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
@@ -609,7 +591,7 @@ def LUG_GINOT_configs():
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
     # NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT"
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/LUG_GINOT_test"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/LUG_GINOT"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all

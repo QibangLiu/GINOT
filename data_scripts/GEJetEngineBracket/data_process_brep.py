@@ -8,8 +8,7 @@ import numpy as np
 import time
 
 # SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
-SCRIPT_PATH = "/work/hdd/bdsy/qibang/repository_Wbdsy/GINOT/data_scripts/GEJetEngineBracket"
-data_path = f"{SCRIPT_PATH}/../../data/GEJetEngineBracket/"
+data_path = f"./../../data/GEJetEngineBracket/"
 brep_path = f"{data_path}/BRep/"
 # %%
 

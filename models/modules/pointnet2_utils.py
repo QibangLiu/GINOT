@@ -112,6 +112,20 @@ def farthest_point_sample(xyz, npoint, pc_padding_value: Optional[float] = None,
         else:
             ids = torch.randint(0, npoint, (B,), dtype=torch.long)
             farthest = non_pad_idx[torch.arange(B), ids]
+        # if deterministic:
+        #     x_clone = xyz[:, :, 0].clone()  # [B, N]
+        #     x_clone[x_clone == pc_padding_value] = float('inf')
+        #     # use the smallest x point as the first point
+        #     farthest = torch.argmin(x_clone, dim=1)  # [B]
+        #     farthest = farthest.long().to(device)
+        # else:
+        #     # random select the first point, but avoid the padding points
+        #     non_pad_idx = torch.arange(N).repeat(B, 1).to(device)
+        #     non_pad_idx = torch.where(~pad_mask, non_pad_idx, float('inf'))
+        #     non_pad_idx, _ = torch.sort(non_pad_idx, dim=1)
+        #     non_pad_idx = non_pad_idx[:, :npoint].long().to(device)
+        #     ids = torch.randint(0, npoint, (B,), dtype=torch.long)
+        #     farthest = non_pad_idx[torch.arange(B), ids]
     else:
         if deterministic:
             # farthest = torch.arange(0, B, dtype=torch.long).to(device)

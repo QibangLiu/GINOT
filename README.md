@@ -14,10 +14,16 @@ Figure 1: Overview of GINOT architecture. The boundary points cloud is initially
 
 
 ## Examples
-<img src="images/puc_median_sample.gif" alt="Animation of case Af" width="100%"/>
+<img src="images/puc_median_sample.gif" alt="Animation of pub median case" width="100%"/>
 
 Figure 2: Visualization of Mises stress and displacement solutions for the median testing case of the micro-periodic unit cell. The first column shows the input surface points cloud, the second column presents the true stress on the actual deformed shape, the third column depicts the predicted stress on the predicted deformed shape, and the fourth column highlights the absolute error of stress on the actual deformed shape.
 
 
 
-[Click here to open the viewer](images/test_50percentile.html)
+<img src="images/jeb_plot.png" alt="JEB results" width="100%"/>
+Figure 3: Mises stress solutions for the testing samples of the JEB dataset. The first row corresponds to the best case, the second row represents the median case, and the third row depicts the worst case. The first column shows the input surface points cloud, the second column presents the ground truth from finite element analysis, the third column displays the GINOT prediction, and the last column highlights the absolute error between the prediction and the ground truth.
+
+- [Best Case Visualization](https://QibangLiu.github.io/GINOT/images/test_best.html)
+- [Median Case Visualization](https://QibangLiu.github.io/GINOT/images/test_50percentile.html)
+- [Worst Case Visualization](https://QibangLiu.github.io/GINOT/images/test_worst.html)
+

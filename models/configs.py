@@ -440,7 +440,7 @@ def JEB_GINOT_configs():
         "n_sample": 64,
         "radius": 0.5,
         "d_hidden": [128, 128],
-        "num_heads": 8,
+        "num_heads": 1,
         "cross_attn_layers": 1,
         "self_attn_layers": 2,
         "fps_method": fps_method,
@@ -448,7 +448,7 @@ def JEB_GINOT_configs():
         "dropout": dropout,
     }
     trunc_model_args = {"embed_dim": out_c,
-                        "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
+                        "cross_attn_layers": 3, "num_heads": 1, "dropout": dropout, "padding_value": PADDING_VALUE}
     NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}

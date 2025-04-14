@@ -1,6 +1,6 @@
 **/slurm_output/
 **/saved_models/
-**/saved_weights/
+models/saved_weights/*
 **/__pycache__/
 **/.ipynb_checkpoints/
 **/.vscode/
@@ -13,3 +13,12 @@ data/*
 Param_DeepONet_LUG/
 PLASTIC_LUG_PARAM_VAR_THICK/
 test_results.pkl
+
+
+!models/saved_weights/JEB_GINOT
+!models/saved_weights/elasticity_GINOT
+!models/saved_weights/LUG_GINOT
+!models/saved_weights/poisson_ginot_struct_msh
+!models/saved_weights/poisson_ginot_unstruct_msh
+!models/saved_weights/microstruc_laststep_GINOT
+!models/saved_weights/microstruc_26frames_GINOT

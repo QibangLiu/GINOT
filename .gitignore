@@ -23,3 +23,4 @@ test_results.pkl
 !models/saved_weights/poisson_ginot_unstruct_msh
 !models/saved_weights/microstruc_laststep_GINOT
 !models/saved_weights/microstruc_26frames_GINOT
+!data/GEJetEngineBracket_ln

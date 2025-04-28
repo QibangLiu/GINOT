@@ -10,6 +10,7 @@ __pycache__/
 MyJob.*
 data/*
 
+microstruc_multiFrames_GINOT_testH.py
 Param_DeepONet_LUG/
 PLASTIC_LUG_PARAM_VAR_THICK/
 test_results.pkl

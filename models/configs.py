@@ -214,7 +214,6 @@ def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, num_
     else:
         raise ValueError("num_frames must be 1, 11 or 26")
 
-
     pc_file = f"{DATA_FILEBASE}/PeriodUnitCell/points_cloud.pkl"
     with open(pc_file, "rb") as f:
         point_cloud = pickle.load(f)
@@ -562,7 +561,6 @@ def LoadDataLUGGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, padding_val
     vert_inverse = VertInverse
     print(f"Data loading time: {time.time()-start:.2f} s")
     return train_dataloader, test_dataloader, cells, s_inverse, pc_inverse, vert_inverse
-
 
 
 # %%

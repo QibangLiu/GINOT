@@ -29,7 +29,7 @@ Figure 2: Visualization of Mises stress and displacement solutions for the media
     <td style="padding:0;"><img src="images/test_worst.gif" width="100%"></td>
   </tr>
 </table>
-Figure 3: Mises stress solutions for the median testing samples of the JEB dataset. The first column shows the input surface points cloud, the second column presents the ground truth from finite element analysis, the third column displays the GINOT prediction, and the last column highlights the absolute error between the prediction and the ground truth.
+Figure 3: Mises stress solutions for the median (top row) and worst (bottom row) testing samples of the JEB dataset. Each row shows (from left to right): the input surface point cloud, the ground truth from finite element analysis, the GINOT prediction, and the absolute error between prediction and ground truth.
 
 - [Best Case Visualization](https://QibangLiu.github.io/GINOT/images/test_best.html)
 - [Median Case Visualization](https://QibangLiu.github.io/GINOT/images/test_50percentile.html)

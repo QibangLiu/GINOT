@@ -302,6 +302,34 @@ def microstruc_GINOT_configs():
     return args_all
 
 
+# def microstruc_GINOT_configs():
+#     fps_method = "fps"
+#     out_c = 128
+#     dropout = 0.0
+#     geo_encoder_model_args = {
+#         "input_channels": 2,
+#         "out_c": out_c,
+#         "latent_d": None,
+#         "width": 128,
+#         "n_point": 256,
+#         "n_sample": 8,
+#         "radius": 0.2,
+#         "d_hidden": [128, 128],
+#         "num_heads": 8,
+#         "cross_attn_layers": 2,
+#         "self_attn_layers": 2,
+#         "fps_method": fps_method,
+#         "pc_padding_val": PADDING_VALUE,
+#         "dropout": dropout,
+#     }
+#     trunc_model_args = {"embed_dim": out_c,
+#                         "cross_attn_layers": 4, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
+#     NTO_filebase = f"{SCRIPT_PATH}/saved_weights/microstruc_laststep_GINOT_sa{geo_encoder_model_args['self_attn_layers']}_ca{geo_encoder_model_args['cross_attn_layers']}_nh{geo_encoder_model_args['num_heads']}_rad{geo_encoder_model_args['radius']}_npt{geo_encoder_model_args['n_point']}_ns{geo_encoder_model_args['n_sample']}"
+#     args_all = {"branch_args": geo_encoder_model_args,
+#                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
+#     return args_all
+
+
 def microstruc_multiFrames_GINOT_configs(num_frames=26):
     fps_method = "fps"
     out_c = 128
@@ -439,7 +467,7 @@ def JEB_GINOT_configs():
         "n_sample": 64,
         "radius": 0.5,
         "d_hidden": [128, 128],
-        "num_heads": 1,
+        "num_heads": 4,
         "cross_attn_layers": 1,
         "self_attn_layers": 2,
         "fps_method": fps_method,
@@ -447,11 +475,39 @@ def JEB_GINOT_configs():
         "dropout": dropout,
     }
     trunc_model_args = {"embed_dim": out_c,
-                        "cross_attn_layers": 3, "num_heads": 1, "dropout": dropout, "padding_value": PADDING_VALUE}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT"
+                        "cross_attn_layers": 3, "num_heads": 4, "dropout": dropout, "padding_value": PADDING_VALUE}
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT_4HeadsAdamW_dw0.1"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
+
+
+# def JEB_GINOT_configs():
+#     fps_method = "fps"
+#     out_c = 128
+#     dropout = 0.0
+#     geo_encoder_model_args = {
+#         "input_channels": 3,
+#         "out_c": out_c,
+#         "latent_d": None,
+#         "width": 128,
+#         "n_point": 512,
+#         "n_sample": 64,
+#         "radius": 0.5,
+#         "d_hidden": [128, 128],
+#         "num_heads": 4,
+#         "cross_attn_layers": 1,
+#         "self_attn_layers": 0,
+#         "fps_method": fps_method,
+#         "pc_padding_val": PADDING_VALUE,
+#         "dropout": dropout,
+#     }
+#     trunc_model_args = {"embed_dim": out_c,
+#                         "cross_attn_layers": 3, "num_heads": 4, "dropout": dropout, "padding_value": PADDING_VALUE}
+#     NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT_sa{geo_encoder_model_args['self_attn_layers']}_ca{geo_encoder_model_args['cross_attn_layers']}_nh{geo_encoder_model_args['num_heads']}_rad{geo_encoder_model_args['radius']}_npt{geo_encoder_model_args['n_point']}_ns{geo_encoder_model_args['n_sample']}"
+#     args_all = {"branch_args": geo_encoder_model_args,
+#                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
+#     return args_all
 
 # =============================================================================
 # %%
@@ -593,3 +649,32 @@ def LUG_GINOT_configs():
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
+
+
+# def LUG_GINOT_configs():
+#     fps_method = "fps"
+#     out_c = 128
+#     dropout = 0.0
+#     geo_encoder_model_args = {
+#         "input_channels": 3,
+#         "out_c": out_c,
+#         "latent_d": None,
+#         "width": 128,
+#         "n_point": 512,
+#         "n_sample": 64,
+#         "radius": 0.5,
+#         "d_hidden": [128, 128],
+#         "num_heads": 4,
+#         "cross_attn_layers": 1,
+#         "self_attn_layers": 0,
+#         "fps_method": fps_method,
+#         "pc_padding_val": PADDING_VALUE,
+#         "dropout": dropout,
+#     }
+#     trunc_model_args = {"embed_dim": out_c,
+#                         "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
+#     # NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT"
+#     NTO_filebase = f"{SCRIPT_PATH}/saved_weights/LUG_GINOT_sa{geo_encoder_model_args['self_attn_layers']}_ca{geo_encoder_model_args['cross_attn_layers']}_nh{geo_encoder_model_args['num_heads']}_rad{geo_encoder_model_args['radius']}_npt{geo_encoder_model_args['n_point']}_ns{geo_encoder_model_args['n_sample']}   "
+#     args_all = {"branch_args": geo_encoder_model_args,
+#                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
+#     return args_all

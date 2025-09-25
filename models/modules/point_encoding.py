@@ -19,7 +19,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from .transformer import CrossAttentionBlocks, SelfAttentionBlocks
+from .transformer import CrossAttentionBlocks, SelfAttentionBlocks, sinusoidal_positional_encoding
 from . import pointnet2_utils as pnet
 from .point_position_embedding import PosEmbLinear
 import warnings

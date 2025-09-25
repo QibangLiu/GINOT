@@ -16,7 +16,7 @@ PLASTIC_LUG_PARAM_VAR_THICK/
 test_results.pkl
 
 
-!models/saved_weights/JEB_GINOT
+!models/saved_weights/JEB_GINOT_4HeadsAdamW_dw0.1
 !models/saved_weights/elasticity_GINOT
 !models/saved_weights/LUG_GINOT
 !models/saved_weights/poisson_ginot_struct_msh

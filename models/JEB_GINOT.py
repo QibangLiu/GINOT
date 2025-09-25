@@ -137,7 +137,7 @@ def EvaluateForwardModel(trainer, test_loader, train_loader):
 def TrainNOTModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, window_size=None):
 
     train_loader, test_loader, _, s_inverse, pc_inverse, vert_inverse = configs.LoadDataJEBGeo(
-        bs_train=32, bs_test=32)
+        bs_train=16, bs_test=32)
 
     class TRAINER(torch_trainer.TorchTrainer):
         def __init__(self, models, device, filebase):
@@ -180,11 +180,12 @@ def TrainNOTModel(NTO_model, filebase, train_flag, epochs=300, lr=1e-3, window_s
 
     trainer = TRAINER(
         NTO_model, device, filebase)
-    optimizer = torch.optim.Adam(trainer.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(
+        trainer.parameters(), lr=lr, weight_decay=0.1)
     checkpoint = torch_trainer.ModelCheckpoint(
         monitor="loss", save_best_only=True)
     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.7, patience=100)
+        optimizer, factor=0.7, patience=50)
     trainer.compile(
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,

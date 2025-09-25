@@ -37,7 +37,7 @@ html_names = {"train_best": plot_file_base+"train_best.html",
               "test_50percentile": plot_file_base+"test_50percentile.html",
               "test_worst": plot_file_base+"test_worst.html", }
 show_edges = False
-error_type = "nrmse"
+error_type = "l2"
 
 # %%
 configs_jeb = configs.JEB_GINOT_configs()
@@ -306,7 +306,7 @@ plot_results_animation(surface_pc_test, True_s_test, Pred_s_test, cells_test,
 # %%
 # plot the worst test sample
 sort_idx = np.argsort(error_s)
-index = sort_idx[int(len(sort_idx))-1]
+index = sort_idx[int(len(sort_idx))-2]
 cells_test = cells_all[sample_ids_test[index]]
 verts_test = verts_all_test[index]
 surface_pc_test = pc_all_test[index]

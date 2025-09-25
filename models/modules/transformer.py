@@ -131,3 +131,29 @@ class CrossAttentionBlocks(nn.Module):
         for block in self.resblocks:
             q = block(q, kv, key_padding_mask=key_padding_mask)
         return q
+
+# %%
+
+
+def sinusoidal_positional_encoding(length, d_model, dtype=torch.float32):
+    """Positional encoding for transformer models using PyTorch.
+    Args:
+      length: Length of the sequence.
+      d_model: Depth of the model. Must be an even number.
+    Returns:
+      pos_encoding: Positional encoding of shape (length, depth).
+    """
+    depth = d_model // 2
+    pos_encoding = torch.zeros(length, d_model, dtype=dtype)
+    positions = torch.arange(length, dtype=dtype).unsqueeze(
+        1).float()  # (seq, 1)
+    depths = torch.arange(depth, dtype=dtype).unsqueeze(
+        0) / depth  # (1, depth)
+
+    angle_rates = 1 / (10000 ** depths)  # (1, depth)
+    angle_rads = positions * angle_rates  # (pos, depth)
+
+    pos_encoding[:, 0::2] = torch.sin(angle_rads)  # even indices
+    pos_encoding[:, 1::2] = torch.cos(angle_rads)  # odd indices
+
+    return pos_encoding

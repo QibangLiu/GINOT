@@ -127,13 +127,17 @@ class PointSetEmbedding(nn.Module):
         pnet.CACHE_SAMPLE_AND_GROUP_INDECIES.clear()
 
     def forward(self, xyz, points, pc_padding_value: Optional[int] = None,
-                sample_ids=None):
+                sample_ids=None, order_invariant: bool = False):
         """
         Input:
             xyz: input points position data, [B, C, N]
             points: input points data, [B, D, N]
             sample_ids: the sample ids in each batch,[B,],
             used for cache the sample and group indices
+            order_invariant:
+                only works when inference mode (not self.training) and only for fps method currently (not implemented for first method)
+                If True, always use the smallest point as first point of fps, ensuring that the output remains identical even if the input point cloud order is shuffled.
+                If False, final results may vary slightly for shuffled inputs, but the differences are typically minor and negligible.
         Return:
             new_points: sample points feature data, [B, d_hidden[-1], n_point]
         """
@@ -162,41 +166,25 @@ class PointSetEmbedding(nn.Module):
                 deterministic=deterministic,  # not self.training,
                 fps_method=self.fps_method,
                 pc_padding_value=pc_padding_value,
-                sample_ids=sample_ids
+                sample_ids=sample_ids,
+                order_invariant=order_invariant,
             )
         # new_xyz: sampled points position data, [B, n_point, C]
         # new_points: sampled points data, [B, n_point, n_sample, C+D]
+        # [B, n_point, n_sample, C+D] -> [B, n_point, n_sample, d_hidden[-1]]
         for layer in self.mlp_channel:
             # [B, n_point, n_sample, d_hidden[-1]]
             new_points = layer(new_points)
 
-        # [B, d_hidden[-1], n_point, n_sample]
+        # # [B, n_point, n_sample, d_hidden[-1]] -> [B, d_hidden[-1], n_point, n_sample]
         new_points = new_points.permute(0, 3, 1, 2)
         # [B,d_hidden[-1],n_point,n_sample]->[B,d_hidden[-1],n_point,1]
         new_points = self.mlp_weight_sum(new_points)
+        # [B,d_hidden[-1],n_point,1]-> [B,n_point,d_hidden[-1]]
         new_points = new_points.squeeze(-1)
-
-        # [B, C+D, n_sample, n_point]
-        # new_points = new_points.permute(0, 3, 2, 1)
-        # for i, conv in enumerate(self.mlp_convs):
-        #     new_points = self.act(self.apply_conv(new_points, conv))
-        # new_points = new_points.mean(dim=2)
+        # # TODO: may need use mean pooling instead of weighted sum for ensuring stricly order invariance
+        # new_points = torch.mean(new_points, dim=2)
         return new_points
-
-    # def apply_conv(self, points: torch.Tensor, conv: nn.Module):
-    #     batch, channels, n_samples, _ = points.shape
-    #     # Shuffle the representations
-    #     if self.patch_size > 1 and self.training:
-    #         # QB: TODO: shuffle deterministically when not self.training
-    #         """
-    #         QB: 2025-01-24
-    #         make sure no shuffle when not inference (self.training)
-    #         """
-    #         _, indices = torch.rand(
-    #             batch, channels, n_samples, 1, device=points.device).sort(dim=2)
-    #         points = torch.gather(
-    #             points, 2, torch.broadcast_to(indices, points.shape))
-    #     return conv(points)
 
 class PointCloudPerceiverChannelsEncoder(nn.Module):
     """
@@ -228,8 +216,8 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
             input_channels (int): 2 or 3
             width (int): hidden dimension
             latent_d (int): number of context points
-            n_point (int): number of points in the point set embedding
-            n_sample (int): number of samples in the point set embedding
+            n_point (int): number of points in the point set embedding for fps
+            n_sample (int): number of samples in the point set embedding, i.e. number of neighbors in ball query
             radius (float): radius for the point set embedding
             patch_size//2 (int): padding size of dim 1 of conv in the point set embedding
             padding_mode (str): padding mode of the conv in the point set embedding
@@ -274,7 +262,9 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         self.output_proj = nn.Linear(
             self.width, self.out_c)
 
-    def forward(self, points, sample_ids=None, apply_padding_pointnet2=False):
+    def forward(self, points, sample_ids=None,
+                apply_padding_pointnet2=False,
+                order_invariant: bool = False):
         """
         Args:
             points (torch.Tensor): [B, N, C]
@@ -286,6 +276,10 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
                      if points number is too large, it is recommended to set sample_ids for efficiency, otherwise,can be None.
             apply_padding_pointnet2 (bool): if True or fps method, set padding value=pc_padding_val for pointnet2
                     otherwise, set padding value=None
+            order_invariant:
+                only works when inference mode (not self.training) and only for fps method currently (not implemented for first method)
+                If True, always use the smallest point as first point of fps, ensuring that the output remains identical even if the input point cloud order is shuffled.
+                If False, final results may vary slightly for shuffled inputs, but the differences are typically minor and negligible.
         Returns:
             torch.Tensor: [B,latent_d, out_c] if if self.latent_d is not None, else [B,n_point, width]
         """
@@ -312,11 +306,11 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         points = dataset_emb.permute(0, 2, 1)
         # [B, C2, N] -------------> [B, C3, No], No=n_point
         #      \ pointNet             /\ mean (dim=2)
-        #      _\/ permute           / Conv, C3=d_hidden[-1]=width
+        #      _\/ permute           / MLP, C3=d_hidden[-1]=width
         #       [B, C2+ndim,  n_sample, n_point]
         data_tokens = self.point_set_embedding(
             xyz, points, pc_padding_val_pointnet2,
-            sample_ids=sample_ids)
+            sample_ids=sample_ids, order_invariant=order_invariant)
         # [B, Co, No] -> [B, No, Co]
         data_tokens = data_tokens.permute(0, 2, 1)
         batch_size = points.shape[0]

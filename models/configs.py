@@ -155,7 +155,6 @@ def LoadDataElasticityGeo(test_size=0.2, seed=42):
 
 
 def elasticity_GINOT_configs():
-
     fps_method = "fps"
     out_c = 64
     geo_encoder_model_args = {

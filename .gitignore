@@ -1,6 +1,6 @@
-**/slurm_output/
+**/slurm_output*/
 **/saved_models/
-models/saved_weights/*
+models/saved_weights*/*
 **/__pycache__/
 **/.ipynb_checkpoints/
 **/.vscode/

@@ -69,9 +69,17 @@ class Trunk(nn.Module):
                                          nn.Linear(2*embed_dim, out_channels)
                                          )
 
-    def forward(self, xyt, pc, sample_ids=None):
+    def forward(self, xyt, pc, sample_ids=None, order_invariant: bool = False):
+        """
+        Args:
+            order_invariant:
+                only works when inference mode (not self.training) and only for fps method currently (not implemented for first method)
+                If True, always use the smallest point as first point of fps, ensuring that the output remains identical even if the input point cloud order is shuffled.
+                If False, final results may vary slightly for shuffled inputs, but the differences are typically minor and negligible.
+        """
         # (B, latenc, embed_dim)
-        latent = self.branch(pc, sample_ids=sample_ids)
+        latent = self.branch(pc, sample_ids=sample_ids,
+                             order_invariant=order_invariant)
         # (B,N,ndim)->(B,N,embed_dim)
         xyt = encode_position('nerf', position=xyt)
         x = self.Q_encoder(xyt)

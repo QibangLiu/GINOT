@@ -154,16 +154,16 @@ def LoadDataElasticityGeo(test_size=0.2, seed=42):
     return train_dataset, test_dataset, s_inverse
 
 
-def elasticity_GINOT_configs():
+def elasticity_GINOT_configs(n_point=16, n_sample=18, radius=0.2):
     fps_method = "fps"
     out_c = 64
     geo_encoder_model_args = {
         "out_c": out_c,
         "latent_d": None,
         "width": 64,
-        "n_point": 64,
-        "n_sample": 18,
-        "radius": 0.2,
+        "n_point": n_point,  # 8, 16,32,64,100
+        "n_sample": n_sample,
+        "radius": radius,
         "d_hidden": [64, 64],
         "num_heads": 4,
         "cross_attn_layers": 1,
@@ -172,7 +172,7 @@ def elasticity_GINOT_configs():
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 6}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/elasticity_GINOT"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/elasticity_GINOT_npt{geo_encoder_model_args['n_point']}_ns{geo_encoder_model_args['n_sample']}_rad{geo_encoder_model_args['radius']}"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
@@ -182,7 +182,7 @@ def elasticity_GINOT_configs():
 # ========================microstruc Unit Cell ================================
 
 
-def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, num_frames=1, load_cells="NO", padding_value=PADDING_VALUE):
+def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, num_frames=1, load_cells="NO", padding_value=PADDING_VALUE, pc_percent=1.0):
     start = time.time()
     if load_cells != "NO":
         mesh_file = f"{DATA_FILEBASE}/PeriodUnitCell/mesh_cells10K.pkl"
@@ -226,8 +226,13 @@ def LoadDataMicroSturcGeo(bs_train=32, bs_test=128, test_size=0.2, seed=42, num_
     su_shift = torch.tensor(su_shift)[None, :]  # (1,1,3) or (1,1,1,3)
     su_scaler = torch.tensor(su_scaler)[None, :]  # (1, 1, 3) or (1, 1, 1, 3)
     xyt = [torch.tensor(x[:, :2]) for x in coords]  # (Nb, N, 2)
-    point_cloud = [torch.tensor(x[:, :2])
-                   for x in point_cloud]  # (Nb,N,3)->(Nb, N, 2)
+    np.random.seed(seed)
+    if pc_percent < 1.0:
+        point_cloud = [torch.tensor(x[np.random.choice(
+            x.shape[0], int(x.shape[0]*pc_percent), replace=False), :2]) for x in point_cloud]
+    else:
+        point_cloud = [torch.tensor(x[:, :2])
+                       for x in point_cloud]  # (Nb,N,3)->(Nb, N, 2)
     # split test and train data
     train_ids, test_ids = train_test_split(
         np.arange(len(point_cloud)), test_size=test_size, random_state=seed)
@@ -284,9 +289,9 @@ def microstruc_GINOT_configs():
         "width": 128,
         "n_point": 128,
         "n_sample": 8,
-        "radius": 0.2,
+        "radius": 0.1,
         "d_hidden": [128, 128],
-        "num_heads": 4,
+        "num_heads": 8,
         "cross_attn_layers": 2,
         "self_attn_layers": 2,
         "fps_method": fps_method,
@@ -295,38 +300,11 @@ def microstruc_GINOT_configs():
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 4, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/microstruc_laststep_GINOT"
+    # NTO_filebase = f"{SCRIPT_PATH}/saved_weights/microstruc_laststep_GINOT_1.0PC_sa{geo_encoder_model_args['self_attn_layers']}_ca{geo_encoder_model_args['cross_attn_layers']}_nh{geo_encoder_model_args['num_heads']}_rad{geo_encoder_model_args['radius']}_npt{geo_encoder_model_args['n_point']}_ns{geo_encoder_model_args['n_sample']}"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/microstruc_laststep_GINOT_sa{geo_encoder_model_args['self_attn_layers']}_ca{geo_encoder_model_args['cross_attn_layers']}_nh{geo_encoder_model_args['num_heads']}_rad{geo_encoder_model_args['radius']}_npt{geo_encoder_model_args['n_point']}_ns{geo_encoder_model_args['n_sample']}"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
-
-
-# def microstruc_GINOT_configs():
-#     fps_method = "fps"
-#     out_c = 128
-#     dropout = 0.0
-#     geo_encoder_model_args = {
-#         "input_channels": 2,
-#         "out_c": out_c,
-#         "latent_d": None,
-#         "width": 128,
-#         "n_point": 256,
-#         "n_sample": 8,
-#         "radius": 0.2,
-#         "d_hidden": [128, 128],
-#         "num_heads": 8,
-#         "cross_attn_layers": 2,
-#         "self_attn_layers": 2,
-#         "fps_method": fps_method,
-#         "pc_padding_val": PADDING_VALUE,
-#         "dropout": dropout,
-#     }
-#     trunc_model_args = {"embed_dim": out_c,
-#                         "cross_attn_layers": 4, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
-#     NTO_filebase = f"{SCRIPT_PATH}/saved_weights/microstruc_laststep_GINOT_sa{geo_encoder_model_args['self_attn_layers']}_ca{geo_encoder_model_args['cross_attn_layers']}_nh{geo_encoder_model_args['num_heads']}_rad{geo_encoder_model_args['radius']}_npt{geo_encoder_model_args['n_point']}_ns{geo_encoder_model_args['n_sample']}"
-#     args_all = {"branch_args": geo_encoder_model_args,
-#                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
-#     return args_all
 
 
 def microstruc_multiFrames_GINOT_configs(num_frames=26):
@@ -464,7 +442,7 @@ def JEB_GINOT_configs():
         "width": 128,
         "n_point": 512,
         "n_sample": 64,
-        "radius": 0.5,
+        "radius": 0.1,
         "d_hidden": [128, 128],
         "num_heads": 4,
         "cross_attn_layers": 1,
@@ -475,7 +453,8 @@ def JEB_GINOT_configs():
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 3, "num_heads": 4, "dropout": dropout, "padding_value": PADDING_VALUE}
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT_4HeadsAdamW_dw0.1"
+    # NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT_4HeadsAdamW_dw0.1"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT_4HeadsAdamW_dw0.1_rad{geo_encoder_model_args['radius']}"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all
@@ -632,7 +611,7 @@ def LUG_GINOT_configs():
         "width": 128,
         "n_point": 512,
         "n_sample": 64,
-        "radius": 0.5,
+        "radius": 0.1,
         "d_hidden": [128, 128],
         "num_heads": 8,
         "cross_attn_layers": 1,
@@ -643,8 +622,9 @@ def LUG_GINOT_configs():
     }
     trunc_model_args = {"embed_dim": out_c,
                         "cross_attn_layers": 3, "num_heads": 8, "dropout": dropout, "padding_value": PADDING_VALUE}
-    # NTO_filebase = f"{SCRIPT_PATH}/saved_weights/JEB_GINOT"
-    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/LUG_GINOT"
+
+    # NTO_filebase = f"{SCRIPT_PATH}/saved_weights/LUG_GINOT"
+    NTO_filebase = f"{SCRIPT_PATH}/saved_weights/LUG_GINOT_rad{geo_encoder_model_args['radius']}"
     args_all = {"branch_args": geo_encoder_model_args,
                 "trunk_args": trunc_model_args, "filebase": NTO_filebase}
     return args_all

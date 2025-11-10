@@ -455,3 +455,105 @@ plt.show()
 html_file = html_names["test_50percentile"]
 html_content = load_html(html_file)
 HTML(html_content)
+
+
+# %%
+
+def compute_sdf_torch(verts, faces, nx, ny, nz, bounds):
+    """
+    Compute signed distance function (SDF) of a 3D surface mesh on a regular grid.
+
+    Args:
+        verts: (Nv, 3) tensor of vertices
+        faces: (Nf, 3) tensor of triangle indices
+        nx, ny, nz: grid resolution
+        bounds: ((xmin, xmax), (ymin, ymax), (zmin, zmax))
+
+    Returns:
+        sdf: (nx, ny, nz) tensor of signed distances
+    """
+    device = verts.device
+
+    # Grid coordinates
+    xs = torch.linspace(bounds[0][0], bounds[0][1], nx, device=device)
+    ys = torch.linspace(bounds[1][0], bounds[1][1], ny, device=device)
+    zs = torch.linspace(bounds[2][0], bounds[2][1], nz, device=device)
+    X, Y, Z = torch.meshgrid(xs, ys, zs, indexing='ij')
+    grid_points = torch.stack(
+        [X, Y, Z], dim=-1).reshape(-1, 3)  # (nx*ny*nz, 3)
+
+    # Get triangles
+    tri_verts = verts[faces]  # (Nf, 3, 3)
+    v0, v1, v2 = tri_verts[:, 0], tri_verts[:, 1], tri_verts[:, 2]
+
+    # For each grid point, compute distance to each triangle
+    # Efficient batched computation using PyTorch broadcasting
+    p = grid_points[:, None, :]  # (Ng, 1, 3)
+    e0 = v1 - v0
+    e1 = v2 - v0
+    v0p = p - v0[None, :, :]  # (Ng, Nf, 3)
+
+    # Compute barycentric coordinates
+    a = (e0 * e0).sum(-1)
+    b = (e0 * e1).sum(-1)
+    c = (e1 * e1).sum(-1)
+    d = (e0[None, :, :] * v0p).sum(-1)
+    e = (e1[None, :, :] * v0p).sum(-1)
+    det = a * c - b * b
+    s = (b * e - c * d) / det
+    t = (b * d - a * e) / det
+
+    # Clamp to triangle region
+    s_clamped = s.clamp(0, 1)
+    t_clamped = t.clamp_min(0).clamp_max(1 - s_clamped)
+    closest = v0[None, :, :] + s_clamped[..., None] * \
+        e0[None, :, :] + t_clamped[..., None]*e1[None, :, :]
+
+    # Distance to each triangle
+    dist = ((p - closest)**2).sum(-1).sqrt()  # (Ng, Nf)
+    unsigned_dist, _ = dist.min(dim=1)
+
+    # --- Determine sign (inside/outside) via normal projection ---
+    # Approximate method: use triangle normals and average sign of dot products
+    normals = torch.cross(e0, e1)
+    normals = normals / (normals.norm(dim=-1, keepdim=True) + 1e-12)
+    to_points = (grid_points[:, None, :] - v0[None, :, :])
+    dot_sign = (to_points * normals[None, :, :]).sum(-1)
+    sign = torch.sign(dot_sign.mean(dim=1))
+    sign[sign == 0] = 1  # assume outside if exactly on boundary
+
+    sdf = unsigned_dist * sign
+    sdf = sdf.reshape(nx, ny, nz)
+
+    return sdf
+
+
+data_sample = next(iter(test_dataloader))
+one_sample = [[x[:8].to(device) for x in data_sample]]
+_, _, verts_all_test, pc_all_test, sample_ids_test = predict(
+    one_sample, jeb_ginot)
+verts = verts_all_test[0]
+cells = cells_all[sample_ids_test[0]]
+cell_types = np.full(len(cells), pv.CellType.TETRA)
+mesh_t = pv.UnstructuredGrid(cells.flatten(), cell_types, verts)
+# Extract surface (boundary) triangular mesh from the tetrahedral mesh
+surface_mesh = mesh_t.extract_surface()
+surface_points = surface_mesh.points
+surface_faces = surface_mesh.faces.reshape(-1, 4)[:, 1:4]
+surface_points = torch.tensor(surface_points, dtype=torch.float32).to(device)
+surface_faces = torch.tensor(surface_faces, dtype=torch.long).to(device)
+
+xmin, xmax = surface_points[:, 0].min(), surface_points[:, 0].max()
+ymin, ymax = surface_points[:, 1].min(), surface_points[:, 1].max()
+zmin, zmax = surface_points[:, 2].min(), surface_points[:, 2].max()
+len_x, len_y, len_z = xmax - xmin, ymax - ymin, zmax - zmin
+bounds = ((xmin.item()-0.1*len_x, xmax.item()+0.1*len_x),
+          (ymin.item()-0.1*len_y, ymax.item()+0.1*len_y),
+          (zmin.item()-0.1*len_z, zmax.item()+0.1*len_z))
+nx, ny, nz = 8, 8, 8
+Nx = 64
+time_start = time.time()
+for _ in range(int(Nx/nx*Nx/nz*Nx/ny)):
+    sdf = compute_sdf_torch(surface_points, surface_faces, nx, ny, nz, bounds)
+time_end = time.time()
+print(f"Time taken to compute SDF: {time_end-time_start:.2e} seconds")

@@ -141,6 +141,8 @@ class PointSetEmbedding(nn.Module):
         Return:
             new_points: sample points feature data, [B, d_hidden[-1], n_point]
         """
+        # import time
+        # time_start = time.time()
         if sample_ids is not None:
             deterministic = True
         else:
@@ -169,6 +171,8 @@ class PointSetEmbedding(nn.Module):
                 sample_ids=sample_ids,
                 order_invariant=order_invariant,
             )
+        # print(
+        #     f"PointSetEmbedding sampling time: {time.time()-time_start:.4f} seconds")
         # new_xyz: sampled points position data, [B, n_point, C]
         # new_points: sampled points data, [B, n_point, n_sample, C+D]
         # [B, n_point, n_sample, C+D] -> [B, n_point, n_sample, d_hidden[-1]]

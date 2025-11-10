@@ -16,11 +16,15 @@ PLASTIC_LUG_PARAM_VAR_THICK/
 test_results.pkl
 
 
-!models/saved_weights/JEB_GINOT_4HeadsAdamW_dw0.1
-!models/saved_weights/elasticity_GINOT
+!models/saved_weights/JEB_GINOT_4HeadsAdamW_dw0.1_rad0.1
+!models/saved_weights/elasticity_GINOT_npt16_ns18_rad0.2
 !models/saved_weights/LUG_GINOT
 !models/saved_weights/poisson_ginot_struct_msh
 !models/saved_weights/poisson_ginot_unstruct_msh
-!models/saved_weights/microstruc_laststep_GINOT
+!models/saved_weights/microstruc_laststep_GINOT_sa2_ca2_nh8_rad0.1_npt128_ns8
+!models/saved_weights/microstruc_laststep_GINOT_1.0PC_sa2_ca2_nh8_rad0.1_npt64_ns8
+!models/saved_weights/microstruc_laststep_GINOT_0.8PC_sa2_ca2_nh8_rad0.1_npt64_ns8
+!models/saved_weights/microstruc_laststep_GINOT_0.6PC_sa2_ca2_nh8_rad0.1_npt64_ns8
+!models/saved_weights/microstruc_laststep_GINOT_0.4PC_sa2_ca2_nh8_rad0.1_npt64_ns8
 !models/saved_weights/microstruc_26frames_GINOT
 !data/GEJetEngineBracket_ln

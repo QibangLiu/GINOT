@@ -1,0 +1,1 @@
+The dataset used for training and evaluation is publicly available on [Zenodo](https://doi.org/10.5281/zenodo.15293036), except for the micro-periodic unit cell dataset, which is avilable on https://doi.org/10.5281/zenodo.15121966. Please download these datasets and unzip into this folder

@@ -27,4 +27,4 @@ test_results.pkl
 !models/saved_weights/microstruc_laststep_GINOT_0.6PC_sa2_ca2_nh8_rad0.1_npt64_ns8
 !models/saved_weights/microstruc_laststep_GINOT_0.4PC_sa2_ca2_nh8_rad0.1_npt64_ns8
 !models/saved_weights/microstruc_26frames_GINOT
-!data/GEJetEngineBracket_ln
+!data/README.md

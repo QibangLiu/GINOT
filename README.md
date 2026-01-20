@@ -39,4 +39,8 @@ Figure 3: Mises stress solutions for the median (top row) and worst (bottom row)
 The dataset used for training and evaluation is publicly available on [Zenodo](https://doi.org/10.5281/zenodo.15293036), except for the micro-periodic unit cell dataset, which is avilable on https://doi.org/10.5281/zenodo.15121966. Please download these datasets and unzip into ./data
 
 ## Reference
+- **Liu, Q.**, Zhong, V., Meidani, H., Abueidda, D., Koric, S., & Geubelle, P. (2026).  
+Geometry-Informed Neural Operator Transformer for Partial Differential Equations on Arbitrary Geometries.  
+*Computer Methods in Applied Mechanics and Engineering*, 451, 118668.  
+https://doi.org/10.1016/j.cma.2025.118668
 - Liu, Q.; Zhong, V.; Meidani, H.; Abueidda, D.; Koric, S.; Geubelle, P. Geometry-Informed Neural Operator Transformer. arXiv April 29, 2025. https://doi.org/10.48550/arXiv.2504.19452.
